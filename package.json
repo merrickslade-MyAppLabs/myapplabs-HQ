@@ -1,0 +1,62 @@
+{
+  "name": "myapplabs-hq",
+  "version": "1.0.2",
+  "description": "MyAppLabs HQ — Internal Business Operations Hub",
+  "type": "module",
+  "main": "out/main/index.js",
+  "homepage": "./",
+  "author": "MyAppLabs",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "preview:renderer": "vite --config vite.renderer.config.js",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "build:win": "npm run build && electron-builder --win --publish never",
+    "release:win": "npm run build && electron-builder --win --publish always",
+    "lint": "eslint src --ext .js,.jsx"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@supabase/supabase-js": "^2.98.0",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
+    "framer-motion": "^11.11.17",
+    "react": "^18.3.1",
+    "react-beautiful-dnd": "^13.1.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "eslint": "^9.15.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.myapplabs.hq",
+    "productName": "MyAppLabs HQ",
+    "files": ["out/**"],
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "merrickslade-MyAppLabs",
+      "repo": "myapplabs-HQ"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
