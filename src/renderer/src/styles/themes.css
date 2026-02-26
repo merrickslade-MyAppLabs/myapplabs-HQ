@@ -1,0 +1,145 @@
+/* ============================================================
+   MyAppLabs HQ — Theme System
+   All colours are controlled via CSS custom properties.
+   Themes are applied by setting the data-theme attribute on <html>.
+   ============================================================ */
+
+/* ── Dark Mode (default) ── */
+[data-theme='dark'],
+:root {
+  --bg-primary: #0f0f13;
+  --bg-secondary: #16161d;
+  --bg-tertiary: #1e1e28;
+  --bg-card: #1e1e28;
+  --bg-card-hover: #252530;
+  --bg-input: #252530;
+  --bg-sidebar: #13131a;
+  --bg-modal: #1e1e28;
+
+  --border-color: #2a2a38;
+  --border-color-hover: #3d3d55;
+  --border-color-focus: #6c63ff;
+
+  --text-primary: #f0f0f5;
+  --text-secondary: #9090a8;
+  --text-muted: #5a5a72;
+  --text-inverse: #0f0f13;
+
+  --accent-primary: #6c63ff;
+  --accent-primary-hover: #5a51e0;
+  --accent-primary-muted: rgba(108, 99, 255, 0.15);
+  --accent-secondary: #a78bfa;
+
+  --success: #22c55e;
+  --success-muted: rgba(34, 197, 94, 0.15);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245, 158, 11, 0.15);
+  --danger: #ef4444;
+  --danger-muted: rgba(239, 68, 68, 0.15);
+  --info: #3b82f6;
+  --info-muted: rgba(59, 130, 246, 0.15);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.7);
+
+  --sidebar-width: 240px;
+  --header-height: 64px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --scrollbar-track: #16161d;
+  --scrollbar-thumb: #2a2a38;
+  --scrollbar-thumb-hover: #3d3d55;
+}
+
+/* ── Light Mode ── */
+[data-theme='light'] {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #ebebef;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f0f5;
+  --bg-input: #f5f5f7;
+  --bg-sidebar: #ffffff;
+  --bg-modal: #ffffff;
+
+  --border-color: #e0e0e8;
+  --border-color-hover: #c8c8d8;
+  --border-color-focus: #6c63ff;
+
+  --text-primary: #111118;
+  --text-secondary: #555570;
+  --text-muted: #9090a8;
+  --text-inverse: #ffffff;
+
+  --accent-primary: #6c63ff;
+  --accent-primary-hover: #5a51e0;
+  --accent-primary-muted: rgba(108, 99, 255, 0.1);
+  --accent-secondary: #7c3aed;
+
+  --success: #16a34a;
+  --success-muted: rgba(22, 163, 74, 0.1);
+  --warning: #d97706;
+  --warning-muted: rgba(217, 119, 6, 0.1);
+  --danger: #dc2626;
+  --danger-muted: rgba(220, 38, 38, 0.1);
+  --info: #2563eb;
+  --info-muted: rgba(37, 99, 235, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.12);
+
+  --scrollbar-track: #f5f5f7;
+  --scrollbar-thumb: #d0d0dc;
+  --scrollbar-thumb-hover: #b8b8c8;
+}
+
+/* ── Creamy Brown ── */
+[data-theme='creamy'] {
+  --bg-primary: #f5efe6;
+  --bg-secondary: #fdf8f2;
+  --bg-tertiary: #ede4d8;
+  --bg-card: #fdf8f2;
+  --bg-card-hover: #f5efe6;
+  --bg-input: #f0e8dc;
+  --bg-sidebar: #ede4d8;
+  --bg-modal: #fdf8f2;
+
+  --border-color: #d9c9b4;
+  --border-color-hover: #c4aa8e;
+  --border-color-focus: #b5651d;
+
+  --text-primary: #2c1810;
+  --text-secondary: #6b4c35;
+  --text-muted: #9c7a5e;
+  --text-inverse: #fdf8f2;
+
+  --accent-primary: #b5651d;
+  --accent-primary-hover: #9a5518;
+  --accent-primary-muted: rgba(181, 101, 29, 0.12);
+  --accent-secondary: #d4863a;
+
+  --success: #5a7a3a;
+  --success-muted: rgba(90, 122, 58, 0.12);
+  --warning: #c28a1a;
+  --warning-muted: rgba(194, 138, 26, 0.12);
+  --danger: #c0392b;
+  --danger-muted: rgba(192, 57, 43, 0.12);
+  --info: #2e6da4;
+  --info-muted: rgba(46, 109, 164, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(44, 24, 16, 0.06);
+  --shadow-md: 0 4px 12px rgba(44, 24, 16, 0.1);
+  --shadow-lg: 0 8px 24px rgba(44, 24, 16, 0.14);
+  --shadow-xl: 0 16px 40px rgba(44, 24, 16, 0.18);
+
+  --scrollbar-track: #ede4d8;
+  --scrollbar-thumb: #c4aa8e;
+  --scrollbar-thumb-hover: #b09070;
+}
