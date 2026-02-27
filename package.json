@@ -1,6 +1,6 @@
 {
   "name": "myapplabs-hq",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "MyAppLabs HQ — Internal Business Operations Hub",
   "type": "module",
   "main": "out/main/index.js",
