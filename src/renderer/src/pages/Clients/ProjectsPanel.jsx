@@ -10,6 +10,9 @@ import {
   deleteRecord,
   TABLES
 } from '../../supabase/database'
+import { supabase } from '../../supabase/client'
+
+const STORAGE_BUCKET = 'project-resources'
 
 const WORKFLOW_STAGES = [
   { id: 'discovery', label: 'Discovery' },
@@ -51,6 +54,7 @@ const SECTION_LABEL = {
 
 // ── Inline project form ──────────────────────────────────────────
 function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDelete, saving }) {
+  const toast = useToast()
   const [form, setForm] = useState({
     name: initialData?.name || '',
     description: initialData?.description || '',
@@ -61,6 +65,31 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
   })
   const [resources, setResources] = useState(() => parseResources(initialData?.resources))
   const [errors, setErrors] = useState({})
+  const [uploadingIdx, setUploadingIdx] = useState(null)
+  const fileInputRef = useRef(null)
+  const currentUploadIdx = useRef(null)
+
+  async function handleFileSelect(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const i = currentUploadIdx.current
+    e.target.value = ''
+    setUploadingIdx(i)
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : ''
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext ? '.' + ext : ''}`
+    const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file)
+    if (uploadError) {
+      toast('Upload failed: ' + uploadError.message, 'error')
+      setUploadingIdx(null)
+      return
+    }
+    const { data: { publicUrl } } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+    const autoTitle = file.name.replace(/\.[^.]+$/, '')
+    setResources(res => res.map((item, idx) =>
+      idx === i ? { ...item, url: publicUrl, title: item.title || autoTitle } : item
+    ))
+    setUploadingIdx(null)
+  }
 
   function validate() {
     const e = {}
@@ -174,58 +203,102 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
             + Add
           </button>
         </div>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
         {resources.length === 0 ? (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No resources yet — add a link or file URL.</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No resources yet — add a link or upload a file.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {resources.map((r, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input
-                  className="input"
-                  placeholder="Title"
-                  value={r.title}
-                  onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, title: e.target.value } : item))}
-                  disabled={saving}
-                  style={{ flex: '0 0 120px', fontSize: '12px', padding: '5px 8px', height: 'auto' }}
-                />
-                <input
-                  className="input"
-                  placeholder="URL or file link"
-                  value={r.url}
-                  onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, url: e.target.value } : item))}
-                  disabled={saving}
-                  style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto' }}
-                />
-                {r.url && (
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open link"
-                    style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                    onClick={e => e.stopPropagation()}
+            {resources.map((r, i) => {
+              const isStorageFile = r.url?.includes('/storage/v1/object/public/')
+              const isUploading = uploadingIdx === i
+              return (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    className="input"
+                    placeholder="Title"
+                    value={r.title}
+                    onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, title: e.target.value } : item))}
+                    disabled={saving || isUploading}
+                    style={{ flex: '0 0 120px', fontSize: '12px', padding: '5px 8px', height: 'auto' }}
+                  />
+                  <input
+                    className="input"
+                    placeholder="Paste URL or upload file →"
+                    value={r.url}
+                    onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, url: e.target.value } : item))}
+                    disabled={saving || isUploading}
+                    style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto', color: isStorageFile ? 'var(--text-muted)' : undefined }}
+                  />
+                  {/* Upload file button */}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon btn-sm"
+                    title="Upload file"
+                    disabled={saving || uploadingIdx !== null}
+                    onClick={() => { currentUploadIdx.current = i; fileInputRef.current?.click() }}
+                    style={{ color: 'var(--text-muted)', flexShrink: 0 }}
                   >
-                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                      <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4v4M12 1L6 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                    {isUploading ? (
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ animation: 'resSpin 0.7s linear infinite', color: 'var(--accent-primary)' }}>
+                        <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="16 6" strokeLinecap="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                        <path d="M2 9v2h9V9M6.5 1v7M4 3.5L6.5 1 9 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                  {/* Open link / file */}
+                  {r.url && (
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={isStorageFile ? 'Open file' : 'Open link'}
+                      style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      {isStorageFile ? (
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                          <path d="M3 1h5l3 3v8H3V1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                          <path d="M7 1v3h3M5 7h3M5 9h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                          <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4v4M12 1L6 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon btn-sm"
+                    onClick={() => setResources(res => res.filter((_, idx) => idx !== i))}
+                    disabled={saving || isUploading}
+                    style={{ color: 'var(--danger)', flexShrink: 0 }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                      <path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
-                  </a>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-icon btn-sm"
-                  onClick={() => setResources(res => res.filter((_, idx) => idx !== i))}
-                  disabled={saving}
-                  style={{ color: 'var(--danger)', flexShrink: 0 }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                    <path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                </button>
-              </div>
-            ))}
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
+      <style>{`
+        @keyframes resSpin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+      `}</style>
 
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
