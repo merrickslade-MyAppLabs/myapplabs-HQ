@@ -56,7 +56,8 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
     description: initialData?.description || '',
     status: initialData?.status || 'in progress',
     deadline: initialData?.deadline || '',
-    notes: initialData?.notes || ''
+    notes: initialData?.notes || '',
+    workflowStage: initialData?.workflowStage || 'discovery'
   })
   const [errors, setErrors] = useState({})
 
@@ -82,12 +83,63 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
       description: form.description.trim(),
       status: form.status,
       deadline: form.deadline,
-      notes: form.notes.trim()
+      notes: form.notes.trim(),
+      workflowStage: form.workflowStage
     })
   }
 
+  const currentStageIdx = WORKFLOW_STAGES.findIndex(s => s.id === form.workflowStage)
+
   return (
     <form onSubmit={handleSubmit} noValidate>
+      {/* Pipeline stepper */}
+      <div style={{ marginBottom: '18px' }}>
+        <label className="label">Stage of Workflow</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          {WORKFLOW_STAGES.map((stage, idx) => {
+            const isPast = idx < currentStageIdx
+            const isCurrent = idx === currentStageIdx
+            return (
+              <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: idx < WORKFLOW_STAGES.length - 1 ? 1 : 'none', minWidth: 0 }}>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleChange('workflowStage', stage.id)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '4px 9px',
+                    borderRadius: 20,
+                    fontSize: '11px',
+                    fontWeight: isCurrent ? 700 : 500,
+                    border: 'none',
+                    cursor: saving ? 'default' : 'pointer',
+                    whiteSpace: 'nowrap',
+                    background: isCurrent
+                      ? 'var(--accent-primary)'
+                      : isPast
+                      ? 'var(--accent-primary-muted, rgba(99,102,241,0.15))'
+                      : 'var(--bg-tertiary)',
+                    color: isCurrent ? '#fff' : isPast ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isCurrent ? '0 0 0 2px var(--accent-primary)' : 'none'
+                  }}
+                >
+                  {isPast && (
+                    <svg width="8" height="8" viewBox="0 0 9 9" fill="none" style={{ display: 'inline', marginRight: 2, verticalAlign: 'middle' }}>
+                      <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                  {stage.label}
+                </button>
+                {idx < WORKFLOW_STAGES.length - 1 && (
+                  <div style={{ flex: 1, height: 2, minWidth: 6, background: idx < currentStageIdx ? 'var(--accent-primary)' : 'var(--border-color)', transition: 'background 0.15s ease' }} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       <div style={{ marginBottom: '14px' }}>
         <label className="label">Project Name <span style={{ color: 'var(--danger)' }}>*</span></label>
         <input className="input" placeholder="e.g. Website Redesign" value={form.name} onChange={(e) => handleChange('name', e.target.value)} autoFocus disabled={saving} />
@@ -97,19 +149,9 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
         <label className="label">Description</label>
         <textarea className="input textarea" placeholder="Brief project description..." value={form.description} onChange={(e) => handleChange('description', e.target.value)} rows={2} disabled={saving} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-        <div>
-          <label className="label">Status</label>
-          <select className="input select" value={form.status} onChange={(e) => handleChange('status', e.target.value)} disabled={saving}>
-            {PROJECT_STATUSES.map((s) => (
-              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">Deadline</label>
-          <input type="date" className="input" value={form.deadline} onChange={(e) => handleChange('deadline', e.target.value)} disabled={saving} />
-        </div>
+      <div style={{ marginBottom: '14px' }}>
+        <label className="label">Deadline</label>
+        <input type="date" className="input" value={form.deadline} onChange={(e) => handleChange('deadline', e.target.value)} disabled={saving} />
       </div>
       <div style={{ marginBottom: '20px' }}>
         <label className="label">Notes</label>
@@ -155,7 +197,6 @@ export default function ProjectsPanel({ client, onClose, onEditClient }) {
   const [localAssignedTo, setLocalAssignedTo] = useState(client.assignedTo || '')
   const [resources, setResources] = useState(() => parseResources(client.resources))
   const [resourcesDirty, setResourcesDirty] = useState(false)
-  const [localStage, setLocalStage] = useState(client.workflowStage || 'discovery')
 
   // Reset inline state when switching to a different client
   useEffect(() => {
@@ -163,7 +204,6 @@ export default function ProjectsPanel({ client, onClose, onEditClient }) {
     setLocalBrief(client.brief || '')
     setLocalAssignedTo(client.assignedTo || '')
     setResources(parseResources(client.resources))
-    setLocalStage(client.workflowStage || 'discovery')
     setResourcesDirty(false)
     setProjLoading(true)
   }, [client.id])
@@ -186,11 +226,6 @@ export default function ProjectsPanel({ client, onClose, onEditClient }) {
   async function saveClientField(field, value) {
     const { error } = await updateRecord(TABLES.CLIENTS, client.id, { [field]: value })
     if (error) toast('Failed to save. Please try again.', 'error')
-  }
-
-  function handleStageChange(stageId) {
-    setLocalStage(stageId)
-    saveClientField('workflowStage', stageId)
   }
 
   async function saveResources() {
@@ -283,96 +318,6 @@ export default function ProjectsPanel({ client, onClose, onEditClient }) {
         </div>
       </div>
 
-      {/* ── Workflow pipeline ── */}
-      {(() => {
-        const currentIdx = WORKFLOW_STAGES.findIndex(s => s.id === localStage)
-        return (
-          <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
-            <div style={SECTION_LABEL}>Stage of Workflow</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-              {/* Prev arrow */}
-              <button
-                className="btn btn-ghost btn-icon btn-sm"
-                onClick={() => handleStageChange(WORKFLOW_STAGES[currentIdx - 1].id)}
-                disabled={currentIdx === 0}
-                style={{ flexShrink: 0, opacity: currentIdx === 0 ? 0.25 : 1, marginRight: 6 }}
-                aria-label="Previous stage"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-
-              {/* Stages with connecting lines */}
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                {WORKFLOW_STAGES.map((stage, idx) => {
-                  const isPast = idx < currentIdx
-                  const isCurrent = idx === currentIdx
-                  return (
-                    <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: idx < WORKFLOW_STAGES.length - 1 ? 1 : 'none', minWidth: 0 }}>
-                      <button
-                        onClick={() => handleStageChange(stage.id)}
-                        style={{
-                          flexShrink: 0,
-                          padding: '5px 10px',
-                          borderRadius: 20,
-                          fontSize: '11.5px',
-                          fontWeight: isCurrent ? 700 : 500,
-                          border: 'none',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          background: isCurrent
-                            ? 'var(--accent-primary)'
-                            : isPast
-                            ? 'var(--accent-primary-muted, rgba(99,102,241,0.15))'
-                            : 'var(--bg-tertiary)',
-                          color: isCurrent
-                            ? '#fff'
-                            : isPast
-                            ? 'var(--accent-primary)'
-                            : 'var(--text-muted)',
-                          transition: 'all 0.15s ease',
-                          boxShadow: isCurrent ? '0 0 0 2px var(--accent-primary)' : 'none'
-                        }}
-                      >
-                        {isPast && (
-                          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" style={{ display: 'inline', marginRight: 3, verticalAlign: 'middle' }}>
-                            <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        )}
-                        {stage.label}
-                      </button>
-                      {idx < WORKFLOW_STAGES.length - 1 && (
-                        <div style={{
-                          flex: 1,
-                          height: 2,
-                          minWidth: 8,
-                          background: idx < currentIdx ? 'var(--accent-primary)' : 'var(--border-color)',
-                          transition: 'background 0.15s ease'
-                        }} />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Next arrow */}
-              <button
-                className="btn btn-ghost btn-icon btn-sm"
-                onClick={() => handleStageChange(WORKFLOW_STAGES[currentIdx + 1].id)}
-                disabled={currentIdx === WORKFLOW_STAGES.length - 1}
-                style={{ flexShrink: 0, opacity: currentIdx === WORKFLOW_STAGES.length - 1 ? 0.25 : 1, marginLeft: 6 }}
-                aria-label="Next stage"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        )
-      })()}
-
       {/* ── Projects strip ── */}
       <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: projects.length > 0 ? 8 : 0 }}>
@@ -388,7 +333,8 @@ export default function ProjectsPanel({ client, onClose, onEditClient }) {
         {!projLoading && projects.length > 0 && (
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
             {projects.map((p) => {
-              const ss = PROJ_STATUS_STYLES[p.status] || PROJ_STATUS_STYLES['in progress']
+              const stage = WORKFLOW_STAGES.find(s => s.id === p.workflowStage) || WORKFLOW_STAGES[0]
+              const stageIdx = WORKFLOW_STAGES.indexOf(stage)
               return (
                 <motion.div
                   key={p.id}
@@ -397,19 +343,36 @@ export default function ProjectsPanel({ client, onClose, onEditClient }) {
                   animate={{ opacity: 1, scale: 1 }}
                   className="card"
                   onClick={() => { setEditingProject(p); setModalOpen(true) }}
-                  style={{ padding: '7px 10px', flexShrink: 0, cursor: 'pointer', minWidth: 100, maxWidth: 170 }}
+                  style={{ padding: '8px 11px', flexShrink: 0, cursor: 'pointer', minWidth: 120, maxWidth: 190 }}
                 >
-                  <div style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.name}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                    <span className="badge" style={{ background: ss.bg, color: ss.color, fontSize: '10px' }}>{p.status}</span>
-                    {p.deadline && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {new Date(p.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                      </span>
-                    )}
+                  {/* Mini pipeline dots */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 5 }}>
+                    {WORKFLOW_STAGES.map((s, i) => (
+                      <div key={s.id} style={{
+                        width: i === stageIdx ? 14 : 6,
+                        height: 4,
+                        borderRadius: 2,
+                        background: i < stageIdx
+                          ? 'var(--accent-primary)'
+                          : i === stageIdx
+                          ? 'var(--accent-primary)'
+                          : 'var(--border-color)',
+                        transition: 'all 0.15s ease',
+                        opacity: i <= stageIdx ? 1 : 0.4
+                      }} />
+                    ))}
                   </div>
+                  <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent-primary)' }}>
+                    {stage.label}
+                  </div>
+                  {p.deadline && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: 2 }}>
+                      {new Date(p.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </div>
+                  )}
                 </motion.div>
               )
             })}
