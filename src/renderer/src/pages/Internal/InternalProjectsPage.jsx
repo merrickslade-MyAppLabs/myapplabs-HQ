@@ -45,6 +45,19 @@ function parseResources(raw) {
   try { return JSON.parse(raw) } catch { return [] }
 }
 
+function parseSubProjects(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  try { return JSON.parse(raw) } catch { return [] }
+}
+
+const SUB_STATUS_CYCLE = { 'in progress': 'review', 'review': 'completed', 'completed': 'in progress' }
+const SUB_STATUS_STYLE = {
+  'in progress': { bg: 'var(--info-muted)',    color: 'var(--info)',    label: 'In Progress' },
+  'review':      { bg: 'var(--warning-muted)', color: 'var(--warning)', label: 'Review' },
+  'completed':   { bg: 'var(--success-muted)', color: 'var(--success)', label: 'Done' }
+}
+
 function getCategoryStyle(id) {
   return CATEGORIES.find(c => c.id === id) || { label: id || 'General', color: 'var(--text-muted)', bg: 'var(--bg-tertiary)' }
 }
@@ -66,8 +79,9 @@ function InternalProjectForm({ initialData, onSave, onCancel, onDelete, saving }
     notes:         initialData?.notes         || '',
     workflowStage: initialData?.workflowStage || 'discovery'
   })
-  const [resources, setResources]   = useState(() => parseResources(initialData?.resources))
-  const [errors, setErrors]         = useState({})
+  const [resources, setResources]     = useState(() => parseResources(initialData?.resources))
+  const [subProjects, setSubProjects] = useState(() => parseSubProjects(initialData?.subProjects))
+  const [errors, setErrors]           = useState({})
   const [uploadingIdx, setUploadingIdx] = useState(null)
   const fileInputRef    = useRef(null)
   const currentUploadIdx = useRef(null)
@@ -113,7 +127,7 @@ function InternalProjectForm({ initialData, onSave, onCancel, onDelete, saving }
       name: form.name.trim(), description: form.description.trim(),
       category: form.category, priority: form.priority, status: form.status,
       deadline: form.deadline, notes: form.notes.trim(),
-      workflowStage: form.workflowStage, resources
+      workflowStage: form.workflowStage, resources, subProjects
     })
   }
 
@@ -206,6 +220,69 @@ function InternalProjectForm({ initialData, onSave, onCancel, onDelete, saving }
         <label className="label">Notes</label>
         <textarea className="input textarea" placeholder="Additional notes..." value={form.notes}
           onChange={e => handleChange('notes', e.target.value)} rows={2} disabled={saving} />
+      </div>
+
+      {/* Sub-Projects */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <label className="label" style={{ marginBottom: 0 }}>
+            Sub-Projects
+            {subProjects.length > 0 && (
+              <span style={{ marginLeft: 6, fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                {subProjects.filter(s => s.status === 'completed').length}/{subProjects.length} done
+              </span>
+            )}
+          </label>
+          <button type="button" className="btn btn-ghost btn-sm"
+            onClick={() => setSubProjects(s => [...s, { id: `${Date.now()}`, name: '', status: 'in progress', workflowStage: 'discovery' }])}
+            disabled={saving} style={{ fontSize: '11px', padding: '3px 8px', height: 'auto' }}>
+            + Add
+          </button>
+        </div>
+        {subProjects.length === 0 ? (
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No sub-projects yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {subProjects.map((sp, i) => {
+              const spStyle = SUB_STATUS_STYLE[sp.status] || SUB_STATUS_STYLE['in progress']
+              return (
+                <div key={sp.id || i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {/* Completion tick */}
+                  <button type="button"
+                    onClick={() => setSubProjects(s => s.map((x, idx) => idx === i ? { ...x, status: sp.status === 'completed' ? 'in progress' : 'completed' } : x))}
+                    title={sp.status === 'completed' ? 'Mark incomplete' : 'Mark complete'}
+                    style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${sp.status === 'completed' ? 'var(--success)' : 'var(--border-color)'}`, background: sp.status === 'completed' ? 'var(--success-muted)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    {sp.status === 'completed' && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M1.5 5L4 7.5L8.5 2.5" stroke="var(--success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                  {/* Name */}
+                  <input className="input" placeholder="Sub-project name" value={sp.name}
+                    onChange={e => setSubProjects(s => s.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))}
+                    disabled={saving}
+                    style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto', textDecoration: sp.status === 'completed' ? 'line-through' : 'none', color: sp.status === 'completed' ? 'var(--text-muted)' : undefined }} />
+                  {/* Status cycle badge */}
+                  <button type="button"
+                    onClick={() => setSubProjects(s => s.map((x, idx) => idx === i ? { ...x, status: SUB_STATUS_CYCLE[x.status] || 'in progress' } : x))}
+                    title="Click to change status"
+                    style={{ flexShrink: 0, padding: '3px 7px', borderRadius: 10, fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer', background: spStyle.bg, color: spStyle.color, whiteSpace: 'nowrap' }}>
+                    {spStyle.label}
+                  </button>
+                  {/* Remove */}
+                  <button type="button" className="btn btn-ghost btn-icon btn-sm"
+                    onClick={() => setSubProjects(s => s.filter((_, idx) => idx !== i))}
+                    disabled={saving} style={{ color: 'var(--danger)', flexShrink: 0 }}>
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                      <path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Resources */}
@@ -488,6 +565,29 @@ export default function InternalProjectsPage() {
                         {p.description}
                       </div>
                     )}
+
+                    {/* Sub-project progress */}
+                    {(() => {
+                      const subs = parseSubProjects(p.subProjects)
+                      if (subs.length === 0) return null
+                      const done = subs.filter(s => s.status === 'completed').length
+                      const pct  = Math.round((done / subs.length) * 100)
+                      return (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              {done}/{subs.length} sub-projects done
+                            </span>
+                            <span style={{ fontSize: '10px', color: done === subs.length ? 'var(--success)' : 'var(--text-muted)', fontWeight: 600 }}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div style={{ height: 3, borderRadius: 2, background: 'var(--border-color)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', borderRadius: 2, width: `${pct}%`, background: done === subs.length ? 'var(--success)' : 'var(--accent-primary)', transition: 'width 0.3s ease' }} />
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Workflow mini-bar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 8 }}>
