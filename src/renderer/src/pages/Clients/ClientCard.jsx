@@ -37,13 +37,21 @@ export default function ClientCard({ client, isSelected, onClick, onEdit, onDele
       }}
     >
       {/* Avatar */}
+      {client.logoUrl ? (
+        <img
+          src={client.logoUrl}
+          alt={client.name}
+          style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
+          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }}
+        />
+      ) : null}
       <div
         style={{
           width: 38,
           height: 38,
           borderRadius: 10,
           background: isSelected ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-          display: 'flex',
+          display: client.logoUrl ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: '13px',

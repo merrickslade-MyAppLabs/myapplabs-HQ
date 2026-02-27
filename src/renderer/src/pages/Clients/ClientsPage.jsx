@@ -59,6 +59,14 @@ export default function ClientsPage() {
     return () => unsubscribe()
   }, [])
 
+  // Keep selectedClient in sync when realtime updates arrive
+  useEffect(() => {
+    if (selectedClient) {
+      const updated = clients.find((c) => c.id === selectedClient.id)
+      if (updated) setSelectedClient(updated)
+    }
+  }, [clients])
+
   // Filtered clients
   const filteredClients = clients.filter((c) => {
     const matchesSearch =
@@ -268,6 +276,7 @@ export default function ClientsPage() {
             <ProjectsPanel
               client={selectedClient}
               onClose={() => setSelectedClient(null)}
+              onEditClient={() => openEditModal(selectedClient)}
             />
           </motion.div>
         )}

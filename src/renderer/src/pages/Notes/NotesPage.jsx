@@ -282,8 +282,8 @@ function NoteForm({ initialData, defaultType, onSave, onCancel, saving }) {
         <label className="label">Note Type</label>
         <div style={{ display: 'flex', gap: '8px' }}>
           {[
-            { id: 'shared',   emoji: '👥', label: 'Shared',    desc: 'Both of you can see this' },
-            { id: 'personal', emoji: '🔒', label: 'My Note',   desc: 'Only visible to you' }
+            { id: 'shared',   label: 'Shared',    desc: 'Both of you can see this' },
+            { id: 'personal', label: 'My Note',   desc: 'Only visible to you' }
           ].map((t) => (
             <button
               key={t.id}
@@ -302,7 +302,7 @@ function NoteForm({ initialData, defaultType, onSave, onCancel, saving }) {
                 textAlign: 'left'
               }}
             >
-              <div style={{ fontSize: '15px', marginBottom: '2px' }}>{t.emoji} {t.label}</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{t.label}</div>
               <div style={{ fontSize: '11px', opacity: 0.75 }}>{t.desc}</div>
             </button>
           ))}
@@ -527,8 +527,8 @@ export default function NotesPage() {
         {/* Tab bar */}
         <div style={{ display: 'flex' }}>
           {[
-            { id: 'shared',   label: '👥 Shared',   count: sharedCount },
-            { id: 'personal', label: '🔒 My Notes', count: personalCount }
+            { id: 'shared',   label: 'Shared',   count: sharedCount },
+            { id: 'personal', label: 'My Notes', count: personalCount }
           ].map((tab) => {
             const isActive = activeTab === tab.id
             return (

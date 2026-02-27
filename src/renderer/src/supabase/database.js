@@ -104,7 +104,7 @@ export function subscribeToTable(tableName, callback) {
 
 /**
  * Subscribe to projects belonging to a specific client, ordered by created_at desc.
- * Uses a Postgres filter so only changes for this client trigger re-fetches.
+ * Returns { unsubscribe, refetch } so callers can manually refetch after mutations.
  */
 export function subscribeToProjectsByClient(clientId, callback) {
   const channelName = `projects-client-${clientId}-${++_channelId}`
@@ -126,23 +126,19 @@ export function subscribeToProjectsByClient(clientId, callback) {
 
   fetchProjects()
 
-  // Filter realtime events to this client's projects only
+  // Subscribe to any change on the projects table; fetchProjects() already filters by client_id
   const channel = supabase
     .channel(channelName)
     .on(
       'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: TABLES.PROJECTS,
-        filter: `client_id=eq.${clientId}`
-      },
+      { event: '*', schema: 'public', table: TABLES.PROJECTS },
       () => fetchProjects()
     )
     .subscribe()
 
-  return () => {
-    supabase.removeChannel(channel)
+  return {
+    unsubscribe: () => supabase.removeChannel(channel),
+    refetch: fetchProjects
   }
 }
 

@@ -12,6 +12,7 @@ export default function ClientForm({ initialData, onSave, onCancel, saving }) {
     email: initialData?.email || '',
     phone: initialData?.phone || '',
     status: initialData?.status || 'lead',
+    logoUrl: initialData?.logoUrl || '',
     notes: initialData?.notes || ''
   })
   const [errors, setErrors] = useState({})
@@ -44,6 +45,7 @@ export default function ClientForm({ initialData, onSave, onCancel, saving }) {
       email: form.email.trim(),
       phone: form.phone.trim(),
       status: form.status,
+      logoUrl: form.logoUrl.trim(),
       notes: form.notes.trim()
     })
   }
@@ -94,6 +96,23 @@ export default function ClientForm({ initialData, onSave, onCancel, saving }) {
             onChange={(e) => handleChange('phone', e.target.value)}
             disabled={saving}
           />
+        </div>
+      </div>
+
+      {/* Logo URL */}
+      <div style={{ marginBottom: '16px' }}>
+        <label className="label" htmlFor="client-logo">Logo URL</label>
+        <input
+          id="client-logo"
+          type="url"
+          className="input"
+          placeholder="https://example.com/logo.png"
+          value={form.logoUrl}
+          onChange={(e) => handleChange('logoUrl', e.target.value)}
+          disabled={saving}
+        />
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          Paste a direct image URL — shown as the client avatar.
         </div>
       </div>
 

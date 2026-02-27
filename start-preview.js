@@ -29,7 +29,8 @@ const server = await createServer({
   },
   define: {
     // Stub window.electronStore so the app renders without Electron
-    'window.electronStore': 'null'
+    'window.electronStore': 'null',
+    '__APP_VERSION__': JSON.stringify('dev')
   }
 })
 

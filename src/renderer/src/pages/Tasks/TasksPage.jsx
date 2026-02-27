@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useToast } from '../../components/ui/Toast'
@@ -42,6 +42,9 @@ const TYPE_COLORS = {
   research:    { bg: 'rgba(20,184,166,0.1)',  color: '#14b8a6' },
   general:     { bg: 'rgba(100,116,139,0.1)', color: '#94a3b8' }
 }
+
+const TYPE_OPTIONS = ['Legal', 'development', 'social', 'Polish', 'design', 'research', 'general']
+const ASSIGNEE_OPTIONS = ['Merrick Slade', 'Sam Blakesley']
 
 // ── Tag palette ──────────────────────────────────────────────────
 const TAG_PALETTE = [
@@ -130,26 +133,352 @@ function ColHeader({ label, sortKey, sortBy, sortDir, onSort, style }) {
   )
 }
 
+// ── Inline cell dropdown ─────────────────────────────────────────
+function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
+  const panelRef = useRef()
+  const inputRef = useRef()
+
+  // Local state for tag editing (must live at component top-level)
+  const [localTags, setLocalTags] = useState([])
+  const [tagInput, setTagInput]   = useState('')
+
+  // Sync localTags whenever a tags cell is opened
+  useEffect(() => {
+    if (activeCell?.field === 'tags') {
+      const task = tasks.find(t => t.id === activeCell.taskId)
+      setLocalTags(task?.tags || [])
+      setTagInput('')
+    }
+  }, [activeCell?.taskId, activeCell?.field])
+
+  // Close on outside click
+  useEffect(() => {
+    function handleMouseDown(e) {
+      if (panelRef.current && !panelRef.current.contains(e.target)) onClose()
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [onClose])
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(e) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  if (!activeCell) return null
+  const task = tasks.find(t => t.id === activeCell.taskId)
+  if (!task) return null
+
+  const { rect, field } = activeCell
+  const winH = window.innerHeight
+  const approxPanelH = 240
+  const placeAbove = rect.bottom + approxPanelH > winH - 20
+
+  const panelStyle = {
+    position: 'fixed',
+    top: placeAbove ? rect.top - 4 : rect.bottom + 4,
+    left: Math.min(rect.left, window.innerWidth - 200),
+    transform: placeAbove ? 'translateY(-100%)' : 'none',
+    zIndex: 9999,
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: '0 8px 28px rgba(0,0,0,0.3)',
+    minWidth: Math.max(rect.width + 16, 160),
+    overflow: 'hidden',
+    animation: 'cell-drop-in 0.1s ease'
+  }
+
+  // ── Checkmark icon
+  const Checkmark = () => (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--accent-primary)' }}>
+      <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+
+  // ── Generic option row
+  function OptRow({ isActive, onClick, children }) {
+    const [hov, setHov] = useState(false)
+    return (
+      <div
+        onClick={onClick}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          padding: '7px 10px', borderRadius: 6,
+          cursor: 'pointer',
+          background: isActive || hov ? 'var(--bg-tertiary)' : 'transparent',
+          transition: 'background 0.08s'
+        }}
+      >
+        {children}
+        {isActive && <Checkmark />}
+      </div>
+    )
+  }
+
+  let content = null
+
+  // ─ Status ─────────────────────────────────────────────────────
+  if (field === 'column') {
+    content = (
+      <div style={{ padding: '4px' }}>
+        {Object.entries(STATUS_MAP).map(([val, cfg]) => (
+          <OptRow key={val} isActive={task.column === val} onClick={() => onPatch(task.id, { column: val })}>
+            <Chip label={cfg.label} bg={cfg.bg} color={cfg.color} />
+          </OptRow>
+        ))}
+      </div>
+    )
+
+  // ─ Priority ───────────────────────────────────────────────────
+  } else if (field === 'priority') {
+    content = (
+      <div style={{ padding: '4px' }}>
+        {Object.entries(PRIORITY_MAP).map(([val, cfg]) => (
+          <OptRow key={val} isActive={task.priority === val} onClick={() => onPatch(task.id, { priority: val })}>
+            <Chip label={cfg.label} bg={cfg.bg} color={cfg.color} />
+          </OptRow>
+        ))}
+      </div>
+    )
+
+  // ─ Assignee ───────────────────────────────────────────────────
+  } else if (field === 'assignedTo') {
+    content = (
+      <div style={{ padding: '4px' }}>
+        <OptRow isActive={!task.assignedTo} onClick={() => onPatch(task.id, { assignedTo: '' })}>
+          <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>Unassigned</span>
+        </OptRow>
+        {ASSIGNEE_OPTIONS.map(a => (
+          <OptRow key={a} isActive={task.assignedTo === a} onClick={() => onPatch(task.id, { assignedTo: a })}>
+            <Avatar name={a} size={20} />
+            <span style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{a}</span>
+          </OptRow>
+        ))}
+      </div>
+    )
+
+  // ─ Task Type ──────────────────────────────────────────────────
+  } else if (field === 'taskType') {
+    content = (
+      <div style={{ padding: '4px' }}>
+        <OptRow isActive={!task.taskType} onClick={() => onPatch(task.id, { taskType: '' })}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>— None —</span>
+        </OptRow>
+        {TYPE_OPTIONS.map(t => {
+          const key = t.toLowerCase()
+          const cfg = TYPE_COLORS[key] || TYPE_COLORS.general
+          const label = t.charAt(0).toUpperCase() + t.slice(1)
+          return (
+            <OptRow key={t} isActive={(task.taskType || '').toLowerCase() === key} onClick={() => onPatch(task.id, { taskType: t })}>
+              <Chip label={label} bg={cfg.bg} color={cfg.color} />
+            </OptRow>
+          )
+        })}
+      </div>
+    )
+
+  // ─ Due Date ───────────────────────────────────────────────────
+  } else if (field === 'dueDate') {
+    content = (
+      <div style={{ padding: '10px 12px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+          Due Date
+        </div>
+        <input
+          ref={inputRef}
+          type="date"
+          className="input"
+          defaultValue={task.dueDate || ''}
+          autoFocus
+          style={{ width: '100%', fontSize: '13px' }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onPatch(task.id, { dueDate: e.target.value || null })
+          }}
+        />
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: '12px' }}>Cancel</button>
+          {task.dueDate && (
+            <button className="btn btn-ghost btn-sm" onClick={() => onPatch(task.id, { dueDate: null })} style={{ fontSize: '12px', color: 'var(--danger)' }}>Clear</button>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={() => onPatch(task.id, { dueDate: inputRef.current?.value || null })} style={{ fontSize: '12px' }}>
+            Set Date
+          </button>
+        </div>
+      </div>
+    )
+
+  // ─ Effort Level ───────────────────────────────────────────────
+  } else if (field === 'effortLevel') {
+    content = (
+      <div style={{ padding: '4px' }}>
+        <OptRow isActive={!task.effortLevel} onClick={() => onPatch(task.id, { effortLevel: '' })}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>— None —</span>
+        </OptRow>
+        {Object.entries(EFFORT_MAP).map(([val, cfg]) => (
+          <OptRow key={val} isActive={(task.effortLevel || '').toLowerCase() === val} onClick={() => onPatch(task.id, { effortLevel: val })}>
+            <Chip label={cfg.label} bg={cfg.bg} color={cfg.color} />
+          </OptRow>
+        ))}
+      </div>
+    )
+
+  // ─ Tags ───────────────────────────────────────────────────────
+  } else if (field === 'tags') {
+    function addLocalTag(raw) {
+      const tag = raw.trim().replace(/,/g, '')
+      if (tag && !localTags.includes(tag)) setLocalTags(prev => [...prev, tag])
+      setTagInput('')
+    }
+    content = (
+      <div style={{ padding: '10px 12px', minWidth: '240px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+          Tags
+        </div>
+        {/* Current tags as removable chips */}
+        {localTags.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '8px' }}>
+            {localTags.map(tag => {
+              const c = getTagColour(tag)
+              return (
+                <span key={tag} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  padding: '2px 8px', borderRadius: 99,
+                  background: c.bg, color: c.text, fontSize: '11px', fontWeight: 600
+                }}>
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => setLocalTags(prev => prev.filter(t => t !== tag))}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', display: 'flex', alignItems: 'center', lineHeight: 1 }}
+                  >
+                    <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                      <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+        )}
+        {/* New tag input */}
+        <input
+          type="text"
+          className="input"
+          placeholder="Add tag — press Enter or ,"
+          value={tagInput}
+          onChange={e => setTagInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addLocalTag(tagInput) }
+            else if (e.key === 'Backspace' && !tagInput && localTags.length > 0) setLocalTags(prev => prev.slice(0, -1))
+          }}
+          onBlur={() => { if (tagInput.trim()) addLocalTag(tagInput) }}
+          autoFocus
+          style={{ width: '100%', fontSize: '12.5px' }}
+        />
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px' }}>
+          Press <kbd style={{ padding: '1px 4px', border: '1px solid var(--border-color)', borderRadius: 3, fontSize: '10px' }}>Enter</kbd>
+          {' '}or{' '}
+          <kbd style={{ padding: '1px 4px', border: '1px solid var(--border-color)', borderRadius: 3, fontSize: '10px' }}>,</kbd>
+          {' '}to add · <kbd style={{ padding: '1px 4px', border: '1px solid var(--border-color)', borderRadius: 3, fontSize: '10px' }}>⌫</kbd> to remove last
+        </div>
+        <div style={{ display: 'flex', gap: '6px', marginTop: '10px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: '12px' }}>Cancel</button>
+          <button className="btn btn-primary btn-sm" onClick={() => onPatch(task.id, { tags: localTags })} style={{ fontSize: '12px' }}>Save</button>
+        </div>
+      </div>
+    )
+
+  // ─ Task Name (Title) ──────────────────────────────────────────
+  } else if (field === 'title') {
+    content = (
+      <div style={{ padding: '10px 12px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+          Task Title
+        </div>
+        <input
+          ref={inputRef}
+          type="text"
+          className="input"
+          defaultValue={task.title}
+          autoFocus
+          style={{ width: '100%', fontSize: '13px', minWidth: '260px' }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { const v = e.target.value.trim(); if (v) onPatch(task.id, { title: v }) }
+          }}
+        />
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: '12px' }}>Cancel</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { const v = inputRef.current?.value.trim(); if (v) onPatch(task.id, { title: v }) }} style={{ fontSize: '12px' }}>
+            Save
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={panelRef} style={panelStyle}>
+      {content}
+    </div>
+  )
+}
+
+// ── Editable cell TD ─────────────────────────────────────────────
+// Wraps a TD that supports inline editing — shows a subtle hover cue
+function EditCell({ children, onOpen, style, isRowHovered }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <td
+      onClick={onOpen}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        padding: '11px 12px',
+        cursor: 'pointer',
+        ...style
+      }}
+    >
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+        {children}
+        {/* tiny pencil cue — only visible when row AND cell are hovered */}
+        {hov && isRowHovered && (
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" style={{ color: 'var(--text-muted)', opacity: 0.55, flexShrink: 0 }}>
+            <path d="M7 1.5l1.5 1.5-5.5 5.5H1.5V7L7 1.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </div>
+    </td>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────────
 export default function TasksPage() {
   const toast = useToast()
-  const [tasks, setTasks]           = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
-  const [modalOpen, setModalOpen]   = useState(false)
+  const [tasks, setTasks]             = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(null)
+  const [modalOpen, setModalOpen]     = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [saving, setSaving]         = useState(false)
-  const [hoveredRow, setHoveredRow] = useState(null)
+  const [saving, setSaving]           = useState(false)
+  const [hoveredRow, setHoveredRow]   = useState(null)
+
+  // Inline cell editing
+  const [activeCell, setActiveCell] = useState(null) // { taskId, field, rect }
 
   // Filters & sort
-  const [search, setSearch]             = useState('')
-  const [filterStatus, setFilterStatus] = useState('all')
+  const [search, setSearch]               = useState('')
+  const [filterStatus, setFilterStatus]   = useState('all')
   const [filterAssignee, setFilterAssignee] = useState('all')
   const [filterPriority, setFilterPriority] = useState('all')
-  const [sortBy, setSortBy]             = useState('createdAt')
-  const [sortDir, setSortDir]           = useState('desc')
+  const [sortBy, setSortBy]               = useState('createdAt')
+  const [sortDir, setSortDir]             = useState('desc')
 
   useEffect(() => {
     const unsub = subscribeToTable(TABLES.TASKS, (docs, err) => {
@@ -193,9 +522,25 @@ export default function TasksPage() {
     })
   }, [tasks, search, filterStatus, filterAssignee, filterPriority, sortBy, sortDir])
 
-  function openAdd()          { setEditingTask(null); setModalOpen(true) }
-  function openEdit(task)     { setEditingTask(task); setModalOpen(true) }
-  function closeModal()       { setModalOpen(false); setEditingTask(null) }
+  function openAdd()      { setEditingTask(null); setModalOpen(true) }
+  function openEdit(task) { setEditingTask(task); setModalOpen(true) }
+  function closeModal()   { setModalOpen(false); setEditingTask(null) }
+
+  // Open inline cell editor
+  function openCell(e, taskId, field) {
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setActiveCell({ taskId, field, rect })
+  }
+
+  const closeCellDropdown = useCallback(() => setActiveCell(null), [])
+
+  // Quick-patch a single field on a task
+  async function patchTask(taskId, updates) {
+    const { error: err } = await updateRecord(TABLES.TASKS, taskId, updates)
+    if (err) toast('Failed to update.', 'error')
+    setActiveCell(null)
+  }
 
   async function handleSave(formData) {
     setSaving(true)
@@ -262,7 +607,6 @@ export default function TasksPage() {
 
         {/* Filter bar */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Search */}
           <div style={{ position: 'relative', flex: 1, minWidth: '160px', maxWidth: '240px' }}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{
               position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)',
@@ -346,10 +690,10 @@ export default function TasksPage() {
             </thead>
             <tbody>
               {visibleTasks.map(task => {
-                const status   = STATUS_MAP[task.column] || STATUS_MAP.todo
-                const priority = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
-                const effort   = task.effortLevel ? EFFORT_MAP[task.effortLevel.toLowerCase()] : null
-                const typeKey  = (task.taskType || '').toLowerCase()
+                const status    = STATUS_MAP[task.column] || STATUS_MAP.todo
+                const priority  = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
+                const effort    = task.effortLevel ? EFFORT_MAP[task.effortLevel.toLowerCase()] : null
+                const typeKey   = (task.taskType || '').toLowerCase()
                 const typeStyle = TYPE_COLORS[typeKey] || TYPE_COLORS.general
                 const isHovered = hoveredRow === task.id
 
@@ -364,38 +708,40 @@ export default function TasksPage() {
                     key={task.id}
                     onMouseEnter={() => setHoveredRow(task.id)}
                     onMouseLeave={() => setHoveredRow(null)}
-                    onClick={() => openEdit(task)}
                     style={{
                       background: isHovered ? 'var(--bg-tertiary)' : 'transparent',
-                      cursor: 'pointer',
                       transition: 'background 0.1s ease',
                       borderBottom: '1px solid var(--border-color)'
                     }}
                   >
-                    {/* Task name */}
-                    <td style={{ padding: '11px 12px 11px 24px' }}>
+                    {/* Task name — inline edit */}
+                    <EditCell
+                      isRowHovered={isHovered}
+                      onOpen={e => openCell(e, task.id, 'title')}
+                      style={{ paddingLeft: 24 }}
+                    >
                       <span style={{
                         fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)',
                         display: 'block', overflow: 'hidden', textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap', maxWidth: 230
+                        whiteSpace: 'nowrap', maxWidth: 220
                       }}>
                         {task.title}
                       </span>
-                    </td>
+                    </EditCell>
 
-                    {/* Status */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Status — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'column')}>
                       <Chip label={status.label} bg={status.bg} color={status.color} />
-                    </td>
+                    </EditCell>
 
-                    {/* Assignee */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Assignee — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'assignedTo')}>
                       {task.assignedTo ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                           <Avatar name={task.assignedTo} size={22} />
                           <span style={{
                             fontSize: '12.5px', color: 'var(--text-secondary)',
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 110
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100
                           }}>
                             {task.assignedTo}
                           </span>
@@ -403,10 +749,10 @@ export default function TasksPage() {
                       ) : (
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
                       )}
-                    </td>
+                    </EditCell>
 
-                    {/* Due date */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Due date — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'dueDate')}>
                       <span style={{
                         fontSize: '12.5px',
                         color: isOverdue ? 'var(--danger)' : 'var(--text-secondary)',
@@ -415,15 +761,15 @@ export default function TasksPage() {
                       }}>
                         {dueStr}
                       </span>
-                    </td>
+                    </EditCell>
 
-                    {/* Priority */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Priority — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'priority')}>
                       <Chip label={priority.label} bg={priority.bg} color={priority.color} />
-                    </td>
+                    </EditCell>
 
-                    {/* Task type */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Task type — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'taskType')}>
                       {task.taskType ? (
                         <Chip
                           label={task.taskType.charAt(0).toUpperCase() + task.taskType.slice(1)}
@@ -433,10 +779,13 @@ export default function TasksPage() {
                       ) : (
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
                       )}
-                    </td>
+                    </EditCell>
 
-                    {/* Description */}
-                    <td style={{ padding: '11px 12px', maxWidth: 190 }}>
+                    {/* Description — click opens full modal */}
+                    <td
+                      style={{ padding: '11px 12px', maxWidth: 190, cursor: 'pointer' }}
+                      onClick={() => openEdit(task)}
+                    >
                       <span style={{
                         fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4,
                         display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
@@ -445,16 +794,16 @@ export default function TasksPage() {
                       </span>
                     </td>
 
-                    {/* Effort */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Effort — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'effortLevel')}>
                       {effort
                         ? <Chip label={effort.label} bg={effort.bg} color={effort.color} />
                         : <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
                       }
-                    </td>
+                    </EditCell>
 
-                    {/* Tags */}
-                    <td style={{ padding: '11px 12px' }}>
+                    {/* Tags — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'tags')}>
                       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                         {(task.tags || []).slice(0, 3).map(tag => {
                           const c = getTagColour(tag)
@@ -473,8 +822,11 @@ export default function TasksPage() {
                             +{task.tags.length - 3}
                           </span>
                         )}
+                        {(task.tags || []).length === 0 && (
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
+                        )}
                       </div>
-                    </td>
+                    </EditCell>
 
                     {/* Actions */}
                     <td style={{ padding: '11px 12px' }} onClick={e => e.stopPropagation()}>
@@ -511,6 +863,14 @@ export default function TasksPage() {
         )}
       </div>
 
+      {/* ── Inline cell dropdown (portal-like, fixed position) ── */}
+      <InlineCellDropdown
+        activeCell={activeCell}
+        tasks={tasks}
+        onPatch={patchTask}
+        onClose={closeCellDropdown}
+      />
+
       {/* ── Add / Edit modal ── */}
       <Modal
         isOpen={modalOpen}
@@ -541,6 +901,10 @@ export default function TasksPage() {
         @keyframes task-pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
+        }
+        @keyframes cell-drop-in {
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>

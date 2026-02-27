@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
+
+const STORE_KEY = 'rememberedEmail'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -9,12 +11,30 @@ export default function LoginPage() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
+
+  // On mount — load any saved email from electron-store
+  useEffect(() => {
+    async function loadSaved() {
+      try {
+        if (window.electronStore) {
+          const saved = await window.electronStore.get(STORE_KEY)
+          if (saved) {
+            setEmail(saved)
+            setRememberMe(true)
+          }
+        }
+      } catch {
+        // ignore — store unavailable in browser preview
+      }
+    }
+    loadSaved()
+  }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
 
-    // Basic client-side validation
     if (!email.trim()) {
       setError('Please enter your email address.')
       return
@@ -30,6 +50,19 @@ export default function LoginPage() {
 
     if (loginError) {
       setError(loginError)
+    } else {
+      // Persist or clear remembered email based on checkbox
+      try {
+        if (window.electronStore) {
+          if (rememberMe) {
+            await window.electronStore.set(STORE_KEY, email.trim())
+          } else {
+            await window.electronStore.delete(STORE_KEY)
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
     // On success, AuthContext state change triggers App to render the main layout
   }
@@ -195,6 +228,46 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
+            </div>
+
+            {/* Remember me */}
+            <div style={{ marginBottom: '20px', marginTop: '-8px' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '9px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  width: 'fit-content'
+                }}
+              >
+                <div
+                  onClick={() => setRememberMe(v => !v)}
+                  style={{
+                    width: 17,
+                    height: 17,
+                    borderRadius: 5,
+                    border: `1.5px solid ${rememberMe ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                    background: rememberMe ? 'var(--accent-primary)' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {rememberMe && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Remember me on this device
+                </span>
+              </label>
             </div>
 
             {/* Error message */}

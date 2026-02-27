@@ -1,5 +1,4 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { motion } from 'framer-motion'
 
 const NAV_ITEMS = [
   {
@@ -162,7 +161,7 @@ export default function Sidebar() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
-                    padding: '9px 12px',
+                    padding: '9px 12px 9px 9px',
                     borderRadius: 'var(--radius-md)',
                     color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
                     background: isActive ? 'var(--accent-primary-muted)' : 'transparent',
@@ -170,7 +169,7 @@ export default function Sidebar() {
                     fontSize: '13.5px',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    position: 'relative'
+                    borderLeft: `3px solid ${isActive ? 'var(--accent-primary)' : 'transparent'}`
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
@@ -185,23 +184,6 @@ export default function Sidebar() {
                     }
                   }}
                 >
-                  {/* Active indicator */}
-                  {isActive && (
-                    <motion.div
-                      layoutId="sidebar-active"
-                      style={{
-                        position: 'absolute',
-                        left: -10,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: 3,
-                        height: 18,
-                        background: 'var(--accent-primary)',
-                        borderRadius: '0 2px 2px 0'
-                      }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    />
-                  )}
                   <span style={{ flexShrink: 0 }}>{item.icon}</span>
                   <span>{item.label}</span>
                 </div>

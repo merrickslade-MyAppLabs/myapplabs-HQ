@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { SkeletonList } from '../../components/ui/Skeleton'
-import EmptyState from '../../components/ui/EmptyState'
+import { useState, useEffect, useRef } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useToast } from '../../components/ui/Toast'
@@ -13,15 +11,46 @@ import {
   TABLES
 } from '../../supabase/database'
 
+const WORKFLOW_STAGES = [
+  { id: 'discovery', label: 'Discovery' },
+  { id: 'design', label: 'Design' },
+  { id: 'production', label: 'Production' },
+  { id: 'quality_control', label: 'Quality Control' },
+  { id: 'packaged', label: 'Packaged' }
+]
+
 const PROJECT_STATUSES = ['in progress', 'review', 'completed']
 
-const STATUS_STYLES = {
+const PROJ_STATUS_STYLES = {
   'in progress': { bg: 'var(--info-muted)', color: 'var(--info)' },
   'review': { bg: 'var(--warning-muted)', color: 'var(--warning)' },
   'completed': { bg: 'var(--success-muted)', color: 'var(--success)' }
 }
 
-function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, saving }) {
+const CLIENT_STATUS_STYLES = {
+  lead: { bg: 'var(--info-muted)', color: 'var(--info)' },
+  active: { bg: 'var(--success-muted)', color: 'var(--success)' },
+  completed: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' }
+}
+
+function parseResources(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  try { return JSON.parse(raw) } catch { return [] }
+}
+
+const SECTION_LABEL = {
+  fontSize: '10.5px',
+  fontWeight: 600,
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.6px',
+  marginBottom: 8,
+  flexShrink: 0
+}
+
+// ── Inline project form ──────────────────────────────────────────
+function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDelete, saving }) {
   const [form, setForm] = useState({
     name: initialData?.name || '',
     description: initialData?.description || '',
@@ -73,7 +102,7 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, savi
           <label className="label">Status</label>
           <select className="input select" value={form.status} onChange={(e) => handleChange('status', e.target.value)} disabled={saving}>
             {PROJECT_STATUSES.map((s) => (
-              <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
             ))}
           </select>
         </div>
@@ -82,56 +111,113 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, savi
           <input type="date" className="input" value={form.deadline} onChange={(e) => handleChange('deadline', e.target.value)} disabled={saving} />
         </div>
       </div>
-      <div style={{ marginBottom: '24px' }}>
+      <div style={{ marginBottom: '20px' }}>
         <label className="label">Notes</label>
         <textarea className="input textarea" placeholder="Project notes..." value={form.notes} onChange={(e) => handleChange('notes', e.target.value)} rows={2} disabled={saving} />
       </div>
-      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-        <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>Cancel</button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? 'Saving...' : initialData ? 'Save Changes' : 'Add Project'}
-        </button>
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          {initialData && onDelete && (
+            <button type="button" className="btn btn-sm" onClick={onDelete} disabled={saving}
+              style={{ color: 'var(--danger)', border: '1px solid var(--danger-muted)', background: 'var(--danger-muted)' }}>
+              Delete
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving...' : initialData ? 'Save Changes' : 'Add Project'}
+          </button>
+        </div>
       </div>
     </form>
   )
 }
 
-export default function ProjectsPanel({ client, onClose }) {
+// ── Main panel ───────────────────────────────────────────────────
+export default function ProjectsPanel({ client, onClose, onEditClient }) {
   const toast = useToast()
+  const refetchProjects = useRef(null)
+
+  // Projects
   const [projects, setProjects] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [projLoading, setProjLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Subscribe to projects for this specific client in real time
+  // Inline editable client fields
+  const [localNotes, setLocalNotes] = useState(client.notes || '')
+  const [localBrief, setLocalBrief] = useState(client.brief || '')
+  const [localAssignedTo, setLocalAssignedTo] = useState(client.assignedTo || '')
+  const [resources, setResources] = useState(() => parseResources(client.resources))
+  const [resourcesDirty, setResourcesDirty] = useState(false)
+  const [localStage, setLocalStage] = useState(client.workflowStage || 'discovery')
+
+  // Reset inline state when switching to a different client
+  useEffect(() => {
+    setLocalNotes(client.notes || '')
+    setLocalBrief(client.brief || '')
+    setLocalAssignedTo(client.assignedTo || '')
+    setResources(parseResources(client.resources))
+    setLocalStage(client.workflowStage || 'discovery')
+    setResourcesDirty(false)
+    setProjLoading(true)
+  }, [client.id])
+
+  // Subscribe to this client's projects
   useEffect(() => {
     if (!client?.id) return
+    const { unsubscribe, refetch } = subscribeToProjectsByClient(client.id, (docs, err) => {
+      if (err) console.error('Projects subscription error:', err)
+      else setProjects(docs)
+      setProjLoading(false)
+    })
+    refetchProjects.current = refetch
+    return () => {
+      unsubscribe()
+      refetchProjects.current = null
+    }
+  }, [client.id])
 
-    const unsubscribe = subscribeToProjectsByClient(
-      client.id,
-      (docs, err) => {
-        if (err) console.error('Projects subscription error:', err)
-        else setProjects(docs)
-        setLoading(false)
-      }
-    )
+  async function saveClientField(field, value) {
+    const { error } = await updateRecord(TABLES.CLIENTS, client.id, { [field]: value })
+    if (error) toast('Failed to save. Please try again.', 'error')
+  }
 
-    return () => unsubscribe()
-  }, [client?.id])
+  function handleStageChange(stageId) {
+    setLocalStage(stageId)
+    saveClientField('workflowStage', stageId)
+  }
+
+  async function saveResources() {
+    const { error } = await updateRecord(TABLES.CLIENTS, client.id, { resources })
+    if (error) toast('Failed to save resources.', 'error')
+    else setResourcesDirty(false)
+  }
 
   async function handleSaveProject(formData) {
     setSaving(true)
     if (editingProject) {
       const { error } = await updateRecord(TABLES.PROJECTS, editingProject.id, formData)
       if (error) { toast('Failed to update project.', 'error') }
-      else { toast('Project updated.', 'success'); setModalOpen(false); setEditingProject(null) }
+      else {
+        toast('Project updated.', 'success')
+        setModalOpen(false)
+        setEditingProject(null)
+        refetchProjects.current?.()
+      }
     } else {
       const { error } = await addRecord(TABLES.PROJECTS, formData)
       if (error) { toast('Failed to add project.', 'error') }
-      else { toast('Project added.', 'success'); setModalOpen(false) }
+      else {
+        toast('Project added.', 'success')
+        setModalOpen(false)
+        refetchProjects.current?.()
+      }
     }
     setSaving(false)
   }
@@ -143,24 +229,50 @@ export default function ProjectsPanel({ client, onClose }) {
     setDeleteLoading(false)
     setDeleteTarget(null)
     if (error) { toast('Failed to delete project.', 'error') }
-    else { toast('Project deleted.', 'info') }
+    else {
+      toast('Project deleted.', 'info')
+      refetchProjects.current?.()
+    }
   }
 
+  const clientStatus = CLIENT_STATUS_STYLES[client.status] || CLIENT_STATUS_STYLES.lead
+  const initials = client.name?.split(' ').map((n) => n[0]?.toUpperCase()).join('').slice(0, 2) || '?'
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-primary)' }}>
-      {/* Header */}
-      <div style={{ padding: '24px 24px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-          <div>
-            <div className="page-title" style={{ fontSize: '17px' }}>{client.name}</div>
-            <div className="page-subtitle">{projects.length} project{projects.length !== 1 ? 's' : ''}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--bg-primary)' }}>
+
+      {/* ── Header ── */}
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            {/* Logo or initials */}
+            {client.logoUrl ? (
+              <img src={client.logoUrl} alt={client.name}
+                style={{ width: 42, height: 42, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
+            ) : (
+              <div style={{
+                width: 42, height: 42, borderRadius: 10, background: 'var(--accent-primary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '14px', fontWeight: 700, color: '#fff', flexShrink: 0, letterSpacing: '-0.5px'
+              }}>
+                {initials}
+              </div>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {client.name}
+              </div>
+              <span className="badge" style={{ background: clientStatus.bg, color: clientStatus.color, marginTop: 3 }}>
+                {client.status?.charAt(0).toUpperCase() + client.status?.slice(1) || 'Lead'}
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-primary btn-sm" onClick={() => { setEditingProject(null); setModalOpen(true) }}>
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <button className="btn btn-secondary btn-sm" onClick={onEditClient}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
               </svg>
-              Add Project
+              Edit Client
             </button>
             <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="Close panel">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -169,85 +281,279 @@ export default function ProjectsPanel({ client, onClose }) {
             </button>
           </div>
         </div>
-        {client.notes && (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px', padding: '8px 10px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)' }}>
-            {client.notes}
+      </div>
+
+      {/* ── Workflow pipeline ── */}
+      {(() => {
+        const currentIdx = WORKFLOW_STAGES.findIndex(s => s.id === localStage)
+        return (
+          <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+            <div style={SECTION_LABEL}>Stage of Workflow</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              {/* Prev arrow */}
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => handleStageChange(WORKFLOW_STAGES[currentIdx - 1].id)}
+                disabled={currentIdx === 0}
+                style={{ flexShrink: 0, opacity: currentIdx === 0 ? 0.25 : 1, marginRight: 6 }}
+                aria-label="Previous stage"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {/* Stages with connecting lines */}
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                {WORKFLOW_STAGES.map((stage, idx) => {
+                  const isPast = idx < currentIdx
+                  const isCurrent = idx === currentIdx
+                  return (
+                    <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: idx < WORKFLOW_STAGES.length - 1 ? 1 : 'none', minWidth: 0 }}>
+                      <button
+                        onClick={() => handleStageChange(stage.id)}
+                        style={{
+                          flexShrink: 0,
+                          padding: '5px 10px',
+                          borderRadius: 20,
+                          fontSize: '11.5px',
+                          fontWeight: isCurrent ? 700 : 500,
+                          border: 'none',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          background: isCurrent
+                            ? 'var(--accent-primary)'
+                            : isPast
+                            ? 'var(--accent-primary-muted, rgba(99,102,241,0.15))'
+                            : 'var(--bg-tertiary)',
+                          color: isCurrent
+                            ? '#fff'
+                            : isPast
+                            ? 'var(--accent-primary)'
+                            : 'var(--text-muted)',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isCurrent ? '0 0 0 2px var(--accent-primary)' : 'none'
+                        }}
+                      >
+                        {isPast && (
+                          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" style={{ display: 'inline', marginRight: 3, verticalAlign: 'middle' }}>
+                            <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        {stage.label}
+                      </button>
+                      {idx < WORKFLOW_STAGES.length - 1 && (
+                        <div style={{
+                          flex: 1,
+                          height: 2,
+                          minWidth: 8,
+                          background: idx < currentIdx ? 'var(--accent-primary)' : 'var(--border-color)',
+                          transition: 'background 0.15s ease'
+                        }} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Next arrow */}
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => handleStageChange(WORKFLOW_STAGES[currentIdx + 1].id)}
+                disabled={currentIdx === WORKFLOW_STAGES.length - 1}
+                style={{ flexShrink: 0, opacity: currentIdx === WORKFLOW_STAGES.length - 1 ? 0.25 : 1, marginLeft: 6 }}
+                aria-label="Next stage"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Projects strip ── */}
+      <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: projects.length > 0 ? 8 : 0 }}>
+          <div style={SECTION_LABEL}>Projects</div>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => { setEditingProject(null); setModalOpen(true) }}
+            style={{ fontSize: '11px', padding: '3px 9px', height: 'auto' }}
+          >
+            + Add Project
+          </button>
+        </div>
+        {!projLoading && projects.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+            {projects.map((p) => {
+              const ss = PROJ_STATUS_STYLES[p.status] || PROJ_STATUS_STYLES['in progress']
+              return (
+                <motion.div
+                  key={p.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="card"
+                  onClick={() => { setEditingProject(p); setModalOpen(true) }}
+                  style={{ padding: '7px 10px', flexShrink: 0, cursor: 'pointer', minWidth: 100, maxWidth: 170 }}
+                >
+                  <div style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.name}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                    <span className="badge" style={{ background: ss.bg, color: ss.color, fontSize: '10px' }}>{p.status}</span>
+                    {p.deadline && (
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {new Date(p.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              )
+            })}
           </div>
         )}
       </div>
 
-      {/* Projects list */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-        {loading ? (
-          <SkeletonList count={3} />
-        ) : projects.length === 0 ? (
-          <EmptyState
-            icon={<svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="2" y="2" width="7" height="18" rx="2" stroke="currentColor" strokeWidth="1.4"/><rect x="12" y="2" width="7" height="11" rx="2" stroke="currentColor" strokeWidth="1.4"/></svg>}
-            title="No projects yet"
-            description="Add a project for this client to start tracking progress."
-            action={<button className="btn btn-primary btn-sm" onClick={() => { setEditingProject(null); setModalOpen(true) }}>Add First Project</button>}
+      {/* ── Main body: notes + contact / brief ── */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+
+        {/* Client Notes */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 24px', borderRight: '1px solid var(--border-color)', minWidth: 0 }}>
+          <div style={SECTION_LABEL}>Client Notes</div>
+          <textarea
+            className="input textarea"
+            placeholder="Notes about this client..."
+            value={localNotes}
+            onChange={(e) => setLocalNotes(e.target.value)}
+            onBlur={(e) => saveClientField('notes', e.target.value)}
+            style={{ flex: 1, resize: 'none', lineHeight: 1.65, minHeight: 0, fontSize: '13px' }}
           />
-        ) : (
-          <AnimatePresence initial={false}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {projects.map((project) => {
-                const ss = STATUS_STYLES[project.status] || STATUS_STYLES['in progress']
-                return (
-                  <motion.div
-                    key={project.id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="card"
-                    style={{ padding: '14px 16px' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px' }}>
-                          {project.name}
-                        </div>
-                        {project.description && (
-                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px', lineHeight: 1.5 }}>
-                            {project.description}
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          <span className="badge" style={{ background: ss.bg, color: ss.color }}>
-                            {project.status}
-                          </span>
-                          {project.deadline && (
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                                <rect x="1" y="2" width="8" height="7" rx="1" stroke="currentColor" strokeWidth="1"/>
-                                <path d="M3 1v2M7 1v2M1 5h8" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
-                              </svg>
-                              {new Date(project.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setEditingProject(project); setModalOpen(true) }} title="Edit">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
-                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDeleteTarget(project)} title="Delete" style={{ color: 'var(--danger)' }}>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M2 3h8M4.5 3V2h3v1M4 4.5v4M8 4.5v4M2.5 3l.5 7h6l.5-7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )
-              })}
+        </div>
+
+        {/* Right column */}
+        <div style={{ width: 265, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+          {/* Contact info */}
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div style={SECTION_LABEL}>Contact Info</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <rect x="1" y="2.5" width="12" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+                  <path d="M1 4.5l6 4 6-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                </svg>
+                <span style={{ fontSize: '12.5px', color: client.email ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {client.email || 'No email'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <path d="M3 2h2.5l1 3-1.5 1a8 8 0 004 4l1-1.5 3 1V12c0 .6-.5 1-1 1C5 13 1 9 1 3.5 1 2.7 1.9 2 3 2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                </svg>
+                <span style={{ fontSize: '12.5px', color: client.phone ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {client.phone || 'No phone'}
+                </span>
+              </div>
             </div>
-          </AnimatePresence>
+          </div>
+
+          {/* What they want (brief) */}
+          <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={SECTION_LABEL}>What They Want</div>
+            <textarea
+              className="input textarea"
+              placeholder="Client goals, brief, requirements..."
+              value={localBrief}
+              onChange={(e) => setLocalBrief(e.target.value)}
+              onBlur={(e) => saveClientField('brief', e.target.value)}
+              style={{ flex: 1, resize: 'none', lineHeight: 1.65, minHeight: 0, fontSize: '12.5px' }}
+            />
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── Resources ── */}
+      <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={SECTION_LABEL}>Resources</div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {resourcesDirty && (
+              <button className="btn btn-primary btn-sm" onClick={saveResources}
+                style={{ fontSize: '11px', padding: '3px 10px', height: 'auto' }}>
+                Save
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm"
+              onClick={() => { setResources((r) => [...r, { title: '', url: '' }]); setResourcesDirty(true) }}
+              style={{ fontSize: '11px', padding: '3px 8px', height: 'auto' }}>
+              + Add
+            </button>
+          </div>
+        </div>
+        {resources.length === 0 ? (
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No resources added yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 130, overflowY: 'auto' }}>
+            {resources.map((r, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  className="input"
+                  placeholder="Title"
+                  value={r.title}
+                  onChange={(e) => {
+                    setResources((res) => res.map((item, idx) => idx === i ? { ...item, title: e.target.value } : item))
+                    setResourcesDirty(true)
+                  }}
+                  style={{ flex: '0 0 120px', fontSize: '12px', padding: '5px 8px', height: 'auto' }}
+                />
+                <input
+                  className="input"
+                  placeholder="URL or note"
+                  value={r.url}
+                  onChange={(e) => {
+                    setResources((res) => res.map((item, idx) => idx === i ? { ...item, url: e.target.value } : item))
+                    setResourcesDirty(true)
+                  }}
+                  style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto' }}
+                />
+                <button
+                  className="btn btn-ghost btn-icon btn-sm"
+                  onClick={async () => {
+                    const updated = resources.filter((_, idx) => idx !== i)
+                    setResources(updated)
+                    setResourcesDirty(false)
+                    await updateRecord(TABLES.CLIENTS, client.id, { resources: updated })
+                  }}
+                  style={{ color: 'var(--danger)', flexShrink: 0 }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
+      {/* ── Assigned to ── */}
+      <div style={{ padding: '10px 24px', borderTop: '1px solid var(--border-color)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ ...SECTION_LABEL, marginBottom: 0, whiteSpace: 'nowrap' }}>Assigned to</div>
+        <input
+          className="input"
+          placeholder="Team member..."
+          value={localAssignedTo}
+          onChange={(e) => setLocalAssignedTo(e.target.value)}
+          onBlur={(e) => saveClientField('assignedTo', e.target.value)}
+          style={{ flex: 1, fontSize: '13px', padding: '6px 10px', height: 'auto' }}
+        />
+      </div>
+
+      {/* ── Project add/edit modal ── */}
       <Modal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); setEditingProject(null) }}
@@ -260,6 +566,7 @@ export default function ProjectsPanel({ client, onClose }) {
           initialData={editingProject}
           onSave={handleSaveProject}
           onCancel={() => { setModalOpen(false); setEditingProject(null) }}
+          onDelete={editingProject ? () => { setDeleteTarget(editingProject); setModalOpen(false) } : null}
           saving={saving}
         />
       </Modal>
