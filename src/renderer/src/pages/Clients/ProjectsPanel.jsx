@@ -76,19 +76,24 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
     e.target.value = ''
     setUploadingIdx(i)
     const ext = file.name.includes('.') ? file.name.split('.').pop() : ''
-    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext ? '.' + ext : ''}`
-    const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file)
+    const storagePath = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext ? '.' + ext : ''}`
+    const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file)
     if (uploadError) {
       toast('Upload failed: ' + uploadError.message, 'error')
       setUploadingIdx(null)
       return
     }
-    const { data: { publicUrl } } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
     const autoTitle = file.name.replace(/\.[^.]+$/, '')
     setResources(res => res.map((item, idx) =>
-      idx === i ? { ...item, url: publicUrl, title: item.title || autoTitle } : item
+      idx === i ? { ...item, url: '', storagePath, fileName: file.name, title: item.title || autoTitle } : item
     ))
     setUploadingIdx(null)
+  }
+
+  async function openStorageFile(storagePath) {
+    const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storagePath, 3600)
+    if (error) { toast('Could not open file.', 'error'); return }
+    window.open(data.signedUrl, '_blank')
   }
 
   function validate() {
@@ -215,7 +220,7 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {resources.map((r, i) => {
-              const isStorageFile = r.url?.includes('/storage/v1/object/public/')
+              const isStorageFile = !!r.storagePath
               const isUploading = uploadingIdx === i
               return (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -227,14 +232,20 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
                     disabled={saving || isUploading}
                     style={{ flex: '0 0 120px', fontSize: '12px', padding: '5px 8px', height: 'auto' }}
                   />
-                  <input
-                    className="input"
-                    placeholder="Paste URL or upload file →"
-                    value={r.url}
-                    onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, url: e.target.value } : item))}
-                    disabled={saving || isUploading}
-                    style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto', color: isStorageFile ? 'var(--text-muted)' : undefined }}
-                  />
+                  {isStorageFile ? (
+                    <div style={{ flex: 1, fontSize: '12px', padding: '5px 8px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.fileName || r.storagePath}
+                    </div>
+                  ) : (
+                    <input
+                      className="input"
+                      placeholder="Paste URL or upload file →"
+                      value={r.url}
+                      onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, url: e.target.value } : item))}
+                      disabled={saving || isUploading}
+                      style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto' }}
+                    />
+                  )}
                   {/* Upload file button */}
                   <button
                     type="button"
@@ -255,26 +266,34 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
                     )}
                   </button>
                   {/* Open link / file */}
-                  {r.url && (
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={isStorageFile ? 'Open file' : 'Open link'}
-                      style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      {isStorageFile ? (
+                  {(r.url || isStorageFile) && (
+                    isStorageFile ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon btn-sm"
+                        title="Open file"
+                        onClick={() => openStorageFile(r.storagePath)}
+                        style={{ color: 'var(--accent-primary)', flexShrink: 0 }}
+                      >
                         <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                           <path d="M3 1h5l3 3v8H3V1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
                           <path d="M7 1v3h3M5 7h3M5 9h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
                         </svg>
-                      ) : (
+                      </button>
+                    ) : (
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open link"
+                        style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                        onClick={e => e.stopPropagation()}
+                      >
                         <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                           <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4v4M12 1L6 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                         </svg>
-                      )}
-                    </a>
+                      </a>
+                    )
                   )}
                   <button
                     type="button"
