@@ -220,7 +220,7 @@ export default function Sidebar() {
         }}
       >
         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          MyAppLabs HQ v1.0.0
+          MyAppLabs HQ v{__APP_VERSION__}
         </div>
       </div>
     </div>

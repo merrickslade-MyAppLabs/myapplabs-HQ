@@ -1,6 +1,6 @@
 {
   "name": "myapplabs-hq",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "MyAppLabs HQ — Internal Business Operations Hub",
   "type": "module",
   "main": "out/main/index.js",
@@ -42,7 +42,9 @@
   "build": {
     "appId": "com.myapplabs.hq",
     "productName": "MyAppLabs HQ",
-    "files": ["out/**"],
+    "files": [
+      "out/**"
+    ],
     "directories": {
       "output": "release"
     },
