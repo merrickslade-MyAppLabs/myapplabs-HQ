@@ -15,7 +15,8 @@ export const TABLES = {
   REVENUE: 'revenue',
   IDEAS: 'ideas',
   EXPENSES: 'expenses',
-  NOTES: 'notes'
+  NOTES: 'notes',
+  INTERNAL_PROJECTS: 'internal_projects'
 }
 
 // ── Case conversion helpers ──

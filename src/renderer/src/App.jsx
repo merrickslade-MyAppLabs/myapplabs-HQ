@@ -12,11 +12,13 @@ import RevenuePage from './pages/Revenue/RevenuePage'
 import ExpensesPage from './pages/Expenses/ExpensesPage'
 import IdeasPage from './pages/Ideas/IdeasPage'
 import NotesPage from './pages/Notes/NotesPage'
+import InternalProjectsPage from './pages/Internal/InternalProjectsPage'
 
 // Map route paths to header titles
 const PAGE_TITLES = {
   '/': 'Home',
   '/clients': 'Clients & Projects',
+  '/internal': 'Internal Projects',
   '/tasks': 'Task Board',
   '/prompts': 'Prompt Builder',
   '/revenue': 'Revenue & Financials',
@@ -81,6 +83,12 @@ function AuthenticatedLayout() {
                 path="/clients/*"
                 element={
                   <AnimatedPage><ClientsPage /></AnimatedPage>
+                }
+              />
+              <Route
+                path="/internal"
+                element={
+                  <AnimatedPage><InternalProjectsPage /></AnimatedPage>
                 }
               />
               <Route
