@@ -91,14 +91,22 @@ export default function ExpensesPage() {
     })
   }, [expenses, categoryFilter, freqFilter])
 
-  // Aggregate stats across ALL expenses
+  // Helper: convert an expense amount to GBP
+  function toGbp(expense) {
+    const amount = Number(expense.amount) || 0
+    const rate   = Number(expense.exchangeRate) || 1
+    if (!expense.currency || expense.currency === 'GBP') return amount
+    return amount * rate
+  }
+
+  // Aggregate stats across ALL expenses (using GBP equivalents)
   const stats = useMemo(() => {
     const monthly = expenses
       .filter((e) => e.frequency === 'monthly')
-      .reduce((s, e) => s + (Number(e.amount) || 0), 0)
+      .reduce((s, e) => s + toGbp(e), 0)
     const annual = expenses
       .filter((e) => e.frequency === 'annual')
-      .reduce((s, e) => s + (Number(e.amount) || 0), 0)
+      .reduce((s, e) => s + toGbp(e), 0)
     const annualised = monthly * 12 + annual
     return { monthly, annual, annualised }
   }, [expenses])
@@ -332,8 +340,21 @@ export default function ExpensesPage() {
                     <span className="badge" style={{ background: catStyle.bg, color: catStyle.color, fontSize: '11px' }}>
                       {expense.category || '—'}
                     </span>
-                    <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>
-                      {formatCurrency(Number(expense.amount))}
+                    <div>
+                      {expense.currency && expense.currency !== 'GBP' ? (
+                        <>
+                          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                            {expense.currency} {Number(expense.amount).toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            {formatCurrency(toGbp(expense))}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>
+                          {formatCurrency(Number(expense.amount))}
+                        </div>
+                      )}
                     </div>
                     <span className="badge" style={{ background: freqStyle.bg, color: freqStyle.color, fontSize: '11px' }}>
                       {FREQ_LABELS[expense.frequency] || '—'}

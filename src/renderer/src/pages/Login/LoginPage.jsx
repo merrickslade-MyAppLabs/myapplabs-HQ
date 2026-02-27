@@ -233,6 +233,7 @@ export default function LoginPage() {
             {/* Remember me */}
             <div style={{ marginBottom: '20px', marginTop: '-8px' }}>
               <label
+                onClick={() => setRememberMe(v => !v)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -243,7 +244,6 @@ export default function LoginPage() {
                 }}
               >
                 <div
-                  onClick={() => setRememberMe(v => !v)}
                   style={{
                     width: 17,
                     height: 17,

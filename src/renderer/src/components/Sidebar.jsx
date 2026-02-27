@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 
 const NAV_ITEMS = [
@@ -85,21 +86,31 @@ const NAV_ITEMS = [
   }
 ]
 
+const COLLAPSED_WIDTH = 56
+const EXPANDED_WIDTH  = 240
+
 export default function Sidebar() {
   const location = useLocation()
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem('sidebar-collapsed', String(collapsed)) } catch {}
+  }, [collapsed])
 
   return (
     <div
       style={{
-        width: 'var(--sidebar-width)',
+        width: collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH,
         flexShrink: 0,
         height: '100vh',
         background: 'var(--bg-sidebar)',
         borderRight: '1px solid var(--border-color)',
         display: 'flex',
         flexDirection: 'column',
-        padding: '0',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        transition: 'width 0.2s ease'
       }}
     >
       {/* Logo / App Name */}
@@ -108,10 +119,12 @@ export default function Sidebar() {
           height: 'var(--header-height)',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 20px',
+          padding: collapsed ? '0' : '0 20px',
+          justifyContent: collapsed ? 'center' : 'flex-start',
           borderBottom: '1px solid var(--border-color)',
           gap: '10px',
-          flexShrink: 0
+          flexShrink: 0,
+          transition: 'padding 0.2s ease'
         }}
       >
         {/* Logo mark */}
@@ -132,18 +145,20 @@ export default function Sidebar() {
             <rect x="6" y="9" width="4" height="4" rx="0.5" stroke="white" strokeWidth="1.5"/>
           </svg>
         </div>
-        <div>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
-            MyAppLabs
+        {!collapsed && (
+          <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
+              MyAppLabs
+            </div>
+            <div style={{ fontSize: '10px', fontWeight: 500, color: 'var(--text-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+              HQ
+            </div>
           </div>
-          <div style={{ fontSize: '10px', fontWeight: 500, color: 'var(--text-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-            HQ
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
+      <nav style={{ flex: 1, padding: collapsed ? '12px 6px' : '12px 10px', overflowY: 'auto', overflowX: 'hidden' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {NAV_ITEMS.map((item) => {
             const isActive = item.path === '/'
@@ -154,14 +169,16 @@ export default function Sidebar() {
               <NavLink
                 key={item.path}
                 to={item.path}
+                title={collapsed ? item.label : undefined}
                 style={{ textDecoration: 'none' }}
               >
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: collapsed ? 'center' : 'flex-start',
                     gap: '10px',
-                    padding: '9px 12px 9px 9px',
+                    padding: collapsed ? '9px 0' : '9px 12px 9px 9px',
                     borderRadius: 'var(--radius-md)',
                     color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
                     background: isActive ? 'var(--accent-primary-muted)' : 'transparent',
@@ -169,7 +186,7 @@ export default function Sidebar() {
                     fontSize: '13.5px',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    borderLeft: `3px solid ${isActive ? 'var(--accent-primary)' : 'transparent'}`
+                    borderLeft: collapsed ? 'none' : `3px solid ${isActive ? 'var(--accent-primary)' : 'transparent'}`
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
@@ -185,7 +202,7 @@ export default function Sidebar() {
                   }}
                 >
                   <span style={{ flexShrink: 0 }}>{item.icon}</span>
-                  <span>{item.label}</span>
+                  {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{item.label}</span>}
                 </div>
               </NavLink>
             )
@@ -193,17 +210,46 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      {/* Bottom section — version */}
+      {/* Bottom section — version + collapse toggle */}
       <div
         style={{
-          padding: '12px 20px',
+          padding: collapsed ? '12px 6px' : '12px 20px',
           borderTop: '1px solid var(--border-color)',
-          flexShrink: 0
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 8
         }}
       >
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          MyAppLabs HQ v{__APP_VERSION__}
-        </div>
+        {!collapsed && (
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            MyAppLabs HQ v{__APP_VERSION__}
+          </div>
+        )}
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--text-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4px',
+            borderRadius: 'var(--radius-sm)',
+            transition: 'color 0.15s ease, background 0.15s ease',
+            flexShrink: 0
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-tertiary)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
+            <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </div>
     </div>
   )

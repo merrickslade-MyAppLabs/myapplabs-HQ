@@ -469,6 +469,10 @@ export default function TasksPage() {
   const [saving, setSaving]           = useState(false)
   const [hoveredRow, setHoveredRow]   = useState(null)
 
+  // Multi-select
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
   // Inline cell editing
   const [activeCell, setActiveCell] = useState(null) // { taskId, field, rect }
 
@@ -566,6 +570,37 @@ export default function TasksPage() {
     else toast('Task deleted.', 'info')
   }
 
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === visibleTasks.length && visibleTasks.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(visibleTasks.map(t => t.id)))
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (!selectedIds.size) return
+    setBulkDeleting(true)
+    const ids = [...selectedIds]
+    let failed = 0
+    for (const id of ids) {
+      const { error: err } = await deleteRecord(TABLES.TASKS, id)
+      if (err) failed++
+    }
+    setBulkDeleting(false)
+    setSelectedIds(new Set())
+    if (failed > 0) toast(`${failed} task(s) failed to delete.`, 'error')
+    else toast(`${ids.length} task${ids.length !== 1 ? 's' : ''} deleted.`, 'info')
+  }
+
   const hasFilters = search || filterStatus !== 'all' || filterAssignee !== 'all' || filterPriority !== 'all'
   function clearFilters() { setSearch(''); setFilterStatus('all'); setFilterAssignee('all'); setFilterPriority('all') }
 
@@ -648,6 +683,36 @@ export default function TasksPage() {
             <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button>
           )}
         </div>
+
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            marginTop: '10px', padding: '8px 12px',
+            background: 'var(--accent-primary-muted)',
+            border: '1px solid var(--accent-primary)',
+            borderRadius: 'var(--radius-md)'
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)' }}>
+              {selectedIds.size} task{selectedIds.size !== 1 ? 's' : ''} selected
+            </span>
+            <button
+              className="btn btn-sm"
+              onClick={() => setSelectedIds(new Set())}
+              style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: 0 }}
+            >
+              Deselect all
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-muted)', border: '1px solid var(--danger-muted)', marginLeft: 'auto' }}
+            >
+              {bulkDeleting ? 'Deleting…' : `Delete ${selectedIds.size}`}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Table area ── */}
@@ -676,7 +741,36 @@ export default function TasksPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
             <thead>
               <tr>
-                <ColHeader label="Task name"   sortKey="title"       sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 230, paddingLeft: 24 }} />
+                {/* Select-all checkbox */}
+                <th
+                  style={{
+                    padding: '10px 8px 10px 16px',
+                    borderBottom: '1px solid var(--border-color)',
+                    background: 'var(--bg-secondary)',
+                    position: 'sticky', top: 0, zIndex: 1,
+                    width: 36
+                  }}
+                >
+                  <div
+                    onClick={toggleSelectAll}
+                    style={{
+                      width: 15, height: 15, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                      border: `1.5px solid ${selectedIds.size > 0 && selectedIds.size === visibleTasks.length ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                      background: selectedIds.size > 0 && selectedIds.size === visibleTasks.length ? 'var(--accent-primary)' : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {selectedIds.size > 0 && selectedIds.size === visibleTasks.length && (
+                      <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                        <path d="M1.5 4.5l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                    {selectedIds.size > 0 && selectedIds.size < visibleTasks.length && (
+                      <div style={{ width: 7, height: 1.5, background: 'var(--accent-primary)', borderRadius: 1 }} />
+                    )}
+                  </div>
+                </th>
+                <ColHeader label="Task name"   sortKey="title"       sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 230, paddingLeft: 8 }} />
                 <ColHeader label="Status"      sortKey="column"      sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 120 }} />
                 <ColHeader label="Assignee"    sortKey="assignedTo"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 150 }} />
                 <ColHeader label="Due date"    sortKey="dueDate"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 105 }} />
@@ -709,16 +803,35 @@ export default function TasksPage() {
                     onMouseEnter={() => setHoveredRow(task.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                     style={{
-                      background: isHovered ? 'var(--bg-tertiary)' : 'transparent',
+                      background: selectedIds.has(task.id) ? 'var(--accent-primary-muted)' : isHovered ? 'var(--bg-tertiary)' : 'transparent',
                       transition: 'background 0.1s ease',
                       borderBottom: '1px solid var(--border-color)'
                     }}
                   >
+                    {/* Row checkbox */}
+                    <td
+                      style={{ padding: '11px 8px 11px 16px', width: 36 }}
+                      onClick={(e) => { e.stopPropagation(); toggleSelect(task.id) }}
+                    >
+                      <div style={{
+                        width: 15, height: 15, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                        border: `1.5px solid ${selectedIds.has(task.id) ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                        background: selectedIds.has(task.id) ? 'var(--accent-primary)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s ease'
+                      }}>
+                        {selectedIds.has(task.id) && (
+                          <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                            <path d="M1.5 4.5l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </div>
+                    </td>
+
                     {/* Task name — inline edit */}
                     <EditCell
                       isRowHovered={isHovered}
                       onOpen={e => openCell(e, task.id, 'title')}
-                      style={{ paddingLeft: 24 }}
+                      style={{ paddingLeft: 8 }}
                     >
                       <span style={{
                         fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)',
