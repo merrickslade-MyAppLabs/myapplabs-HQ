@@ -59,6 +59,7 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
     notes: initialData?.notes || '',
     workflowStage: initialData?.workflowStage || 'discovery'
   })
+  const [resources, setResources] = useState(() => parseResources(initialData?.resources))
   const [errors, setErrors] = useState({})
 
   function validate() {
@@ -84,7 +85,8 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
       status: form.status,
       deadline: form.deadline,
       notes: form.notes.trim(),
-      workflowStage: form.workflowStage
+      workflowStage: form.workflowStage,
+      resources
     })
   }
 
@@ -153,10 +155,78 @@ function ProjectForm({ clientId, clientName, initialData, onSave, onCancel, onDe
         <label className="label">Deadline</label>
         <input type="date" className="input" value={form.deadline} onChange={(e) => handleChange('deadline', e.target.value)} disabled={saving} />
       </div>
-      <div style={{ marginBottom: '20px' }}>
+      <div style={{ marginBottom: '14px' }}>
         <label className="label">Notes</label>
         <textarea className="input textarea" placeholder="Project notes..." value={form.notes} onChange={(e) => handleChange('notes', e.target.value)} rows={2} disabled={saving} />
       </div>
+
+      {/* Resources */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <label className="label" style={{ marginBottom: 0 }}>Resources</label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setResources(r => [...r, { title: '', url: '' }])}
+            disabled={saving}
+            style={{ fontSize: '11px', padding: '3px 8px', height: 'auto' }}
+          >
+            + Add
+          </button>
+        </div>
+        {resources.length === 0 ? (
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No resources yet — add a link or file URL.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {resources.map((r, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  className="input"
+                  placeholder="Title"
+                  value={r.title}
+                  onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, title: e.target.value } : item))}
+                  disabled={saving}
+                  style={{ flex: '0 0 120px', fontSize: '12px', padding: '5px 8px', height: 'auto' }}
+                />
+                <input
+                  className="input"
+                  placeholder="URL or file link"
+                  value={r.url}
+                  onChange={(e) => setResources(res => res.map((item, idx) => idx === i ? { ...item, url: e.target.value } : item))}
+                  disabled={saving}
+                  style={{ flex: 1, fontSize: '12px', padding: '5px 8px', height: 'auto' }}
+                />
+                {r.url && (
+                  <a
+                    href={r.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open link"
+                    style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                      <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4v4M12 1L6 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon btn-sm"
+                  onClick={() => setResources(res => res.filter((_, idx) => idx !== i))}
+                  disabled={saving}
+                  style={{ color: 'var(--danger)', flexShrink: 0 }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           {initialData && onDelete && (
