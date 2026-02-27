@@ -146,6 +146,24 @@ export function subscribeToProjectsByClient(clientId, callback) {
   }
 }
 
+// ── One-time fetch ──
+
+/**
+ * Fetch all rows from a table once (no subscription). Returns { data, error }.
+ */
+export async function getRecords(tableName, { orderBy = 'created_at', ascending = false } = {}) {
+  const { data, error } = await supabase
+    .from(tableName)
+    .select('*')
+    .order(orderBy, { ascending })
+
+  if (error) {
+    console.error(`[Supabase] Error fetching ${tableName}:`, error)
+    return { data: [], error: error.message }
+  }
+  return { data: data.map(toCamel), error: null }
+}
+
 // ── CRUD operations ──
 
 /**

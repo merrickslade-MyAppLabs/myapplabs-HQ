@@ -7,6 +7,7 @@ import { useToast } from '../../components/ui/Toast'
 import { useAuth } from '../../context/AuthContext'
 import {
   subscribeToTable,
+  getRecords,
   addRecord,
   updateRecord,
   deleteRecord,
@@ -437,6 +438,13 @@ export default function NotesPage() {
   const sharedCount   = notes.filter((n) => n.type === 'shared').length
   const personalCount = notes.filter((n) => n.type === 'personal' && n.userId === user?.id).length
 
+  // Manual refetch — called after save/delete as a fallback in case
+  // the realtime subscription hasn't been enabled for the notes table yet.
+  async function refetch() {
+    const { data } = await getRecords(TABLES.NOTES)
+    setNotes(data)
+  }
+
   function openAdd() {
     setEditingNote(null)
     setModalOpen(true)
@@ -459,11 +467,11 @@ export default function NotesPage() {
     if (editingNote) {
       const { error: err } = await updateRecord(TABLES.NOTES, editingNote.id, payload)
       if (err) toast('Failed to update note.', 'error')
-      else { toast('Note updated.', 'success'); closeModal() }
+      else { await refetch(); toast('Note updated.', 'success'); closeModal() }
     } else {
       const { error: err } = await addRecord(TABLES.NOTES, payload)
       if (err) toast('Failed to add note.', 'error')
-      else { toast('Note added.', 'success'); closeModal() }
+      else { await refetch(); toast('Note added.', 'success'); closeModal() }
     }
     setSaving(false)
   }
@@ -472,6 +480,7 @@ export default function NotesPage() {
     if (!deleteTarget) return
     setDeleteLoading(true)
     const { error: err } = await deleteRecord(TABLES.NOTES, deleteTarget.id)
+    if (!err) await refetch()
     setDeleteLoading(false)
     setDeleteTarget(null)
     if (err) toast('Failed to delete note.', 'error')
