@@ -16,7 +16,9 @@ export const TABLES = {
   IDEAS: 'ideas',
   EXPENSES: 'expenses',
   NOTES: 'notes',
-  INTERNAL_PROJECTS: 'internal_projects'
+  INTERNAL_PROJECTS: 'internal_projects',
+  PROVIDERS: 'providers',
+  AUDIT_LOG: 'audit_log'
 }
 
 // ── Case conversion helpers ──
@@ -227,5 +229,79 @@ export async function deleteRecord(tableName, id) {
   } catch (err) {
     console.error(`[Supabase] Unexpected error deleting from ${tableName}:`, err)
     return { error: err.message }
+  }
+}
+
+// ── Providers — special helpers ───────────────────────────────────────────────
+
+/**
+ * Subscribe to providers WITHOUT returning password_encrypted.
+ * Encrypted passwords are only fetched on explicit user request via fetchProviderPassword().
+ */
+export function subscribeToProviders(callback) {
+  const channelName = `providers-${++_channelId}`
+  // Explicitly exclude password_encrypted from list queries
+  const SAFE_COLUMNS = 'id,name,category,description,url,username,notes,icon_url,is_active,sort_order,added_by,created_at,updated_at'
+
+  async function fetchProviders() {
+    const { data, error } = await supabase
+      .from(TABLES.PROVIDERS)
+      .select(SAFE_COLUMNS)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      callback([], error.message)
+    } else {
+      callback(data.map(toCamel), null)
+    }
+  }
+
+  fetchProviders()
+
+  const channel = supabase
+    .channel(channelName)
+    .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.PROVIDERS }, () => fetchProviders())
+    .subscribe()
+
+  return () => supabase.removeChannel(channel)
+}
+
+/**
+ * Fetch the encrypted password for a single provider via a secure RPC call.
+ * The RPC enforces rate limiting and logs access server-side.
+ * Returns the encrypted password string, or null.
+ */
+export async function fetchProviderPassword(providerId) {
+  try {
+    const { data, error } = await supabase.rpc('get_provider_password', {
+      p_provider_id: providerId
+    })
+    if (error) throw new Error(error.message)
+    return data
+  } catch (err) {
+    // Preserve the original message so callers can detect rate-limit errors
+    throw new Error(err.message || 'Failed to retrieve provider password')
+  }
+}
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+
+/**
+ * Insert an immutable audit log entry.
+ * Failures are silent so they never break the UX.
+ */
+export async function addAuditLog({ userId, action, resourceType, resourceId, metadata = {} }) {
+  try {
+    await supabase.from(TABLES.AUDIT_LOG).insert({
+      user_id: userId,
+      action,
+      resource_type: resourceType,
+      resource_id: resourceId || null,
+      metadata
+    })
+  } catch {
+    // Audit log failures must never break normal operations
   }
 }

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../supabase/client'
+import { clearDerivedKey } from '../utils/crypto'
 
 const AuthContext = createContext(null)
 
@@ -54,6 +55,7 @@ export function AuthProvider({ children }) {
    * Sign out the current user.
    */
   async function logout() {
+    clearDerivedKey() // Wipe in-memory AES key before sign-out
     try {
       await supabase.auth.signOut()
       setUser(null)

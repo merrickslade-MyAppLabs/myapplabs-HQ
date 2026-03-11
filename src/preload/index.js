@@ -23,12 +23,18 @@ const updaterAPI = {
   }
 }
 
+// Expose shell.openExternal — validates https:// in main process before calling
+const shellAPI = {
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
+}
+
 // Expose APIs to renderer process safely
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('electronStore', storeAPI)
     contextBridge.exposeInMainWorld('electronUpdater', updaterAPI)
+    contextBridge.exposeInMainWorld('electronShell', shellAPI)
   } catch (error) {
     console.error('Failed to expose APIs via contextBridge:', error)
   }
@@ -36,4 +42,5 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   window.electronStore = storeAPI
   window.electronUpdater = updaterAPI
+  window.electronShell = shellAPI
 }

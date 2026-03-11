@@ -94,6 +94,18 @@ const NAV_ITEMS = [
         <path d="M6 6h6M6 9h6M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     )
+  },
+  {
+    path: '/providers',
+    label: 'Providers',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="10" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="10" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      </svg>
+    )
   }
 ]
 

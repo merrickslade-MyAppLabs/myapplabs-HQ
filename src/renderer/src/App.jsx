@@ -13,6 +13,7 @@ import ExpensesPage from './pages/Expenses/ExpensesPage'
 import IdeasPage from './pages/Ideas/IdeasPage'
 import NotesPage from './pages/Notes/NotesPage'
 import InternalProjectsPage from './pages/Internal/InternalProjectsPage'
+import ProvidersPage from './pages/Providers/ProvidersPage'
 
 // Map route paths to header titles
 const PAGE_TITLES = {
@@ -24,7 +25,8 @@ const PAGE_TITLES = {
   '/revenue': 'Revenue & Financials',
   '/expenses': 'Expenses',
   '/ideas': 'Ideas Pipeline',
-  '/notes': 'Notes'
+  '/notes': 'Notes',
+  '/providers': 'Providers'
 }
 
 function getPageTitle(pathname) {
@@ -125,6 +127,12 @@ function AuthenticatedLayout() {
                 path="/notes"
                 element={
                   <AnimatedPage><NotesPage /></AnimatedPage>
+                }
+              />
+              <Route
+                path="/providers"
+                element={
+                  <AnimatedPage><ProvidersPage /></AnimatedPage>
                 }
               />
               {/* Redirect any unknown routes to home */}
