@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, session, Menu } from 'electron'
 import { join } from 'path'
 import { createHash } from 'node:crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -79,15 +79,31 @@ function createWindow() {
     backgroundColor: '#0f0f0f',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false,
+      // Security non-negotiables — never set any of these to false.
+      // sandbox:          isolates the renderer in an OS-level sandbox;
+      //                   preload still has ipcRenderer/contextBridge access.
+      // contextIsolation: keeps renderer JS and preload JS in separate worlds.
+      // nodeIntegration:  must be false — no Node APIs in the renderer.
+      // webSecurity:      enforces same-origin policy and blocks mixed content.
+      sandbox: true,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true
     }
   })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
     setupAutoUpdater(mainWindow)
+  })
+
+  // Relay window focus/blur to renderer so the session-lock timer can
+  // detect when the user has returned after a long period away.
+  mainWindow.on('focus', () => {
+    mainWindow.webContents.send('app:focus')
+  })
+  mainWindow.on('blur', () => {
+    mainWindow.webContents.send('app:blur')
   })
 
   // Block all in-app navigation to external URLs.
@@ -171,6 +187,14 @@ ipcMain.handle('shell:openExternal', async (_event, url) => {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.myapplabs.hq')
 
+  // ── Remove application menu in production ──────────────────────────────────
+  // Completely removes the native menu bar in production builds. This prevents
+  // access to View > Developer Tools via the menu. In dev, the menu stays so
+  // DevTools remain accessible during development.
+  if (!is.dev) {
+    Menu.setApplicationMenu(null)
+  }
+
   // ── Content Security Policy (production only) ──────────────────────────────
   // In dev, Vite serves from localhost so CSP is more permissive.
   // In production, enforce a strict policy to block XSS and data exfiltration.
@@ -183,7 +207,7 @@ app.whenReady().then(() => {
             "default-src 'self';" +
             "script-src 'self';" +
             "style-src 'self' 'unsafe-inline';" +
-            "connect-src 'self' https://guigotagildvzanocdzs.supabase.co wss://guigotagildvzanocdzs.supabase.co;" +
+            `connect-src 'self' ${import.meta.env.VITE_SUPABASE_URL} ${import.meta.env.VITE_SUPABASE_URL?.replace('https://', 'wss://')};` +
             "img-src 'self' data: https:;" +
             "font-src 'self' data:;" +
             "object-src 'none';" +

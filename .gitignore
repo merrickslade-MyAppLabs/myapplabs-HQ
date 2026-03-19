@@ -4,5 +4,9 @@ dist-electron/
 release/
 .env
 .env.local
+.env.development
+.env.production
 *.local
+*.key
+*.pem
 out/

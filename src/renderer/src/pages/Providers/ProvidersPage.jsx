@@ -189,7 +189,8 @@ export default function ProvidersPage() {
         url: form.url.trim() || null,
         username: form.username.trim() || null,
         notes: form.notes.trim() || null,
-        addedBy: user.id
+        addedBy: user.id,
+        isActive: true
       }
       if (passwordEncrypted !== undefined) {
         payload.passwordEncrypted = passwordEncrypted

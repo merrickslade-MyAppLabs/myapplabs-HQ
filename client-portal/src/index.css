@@ -1,0 +1,58 @@
+/* Inter bundled locally — no Google Fonts CDN required */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans text-navy-900 bg-gray-50;
+  }
+
+  * {
+    @apply box-border;
+  }
+}
+
+@layer components {
+  /* Primary button — brand orange-red on white text */
+  .btn-primary {
+    @apply bg-brand text-white font-semibold rounded-xl px-5 py-2.5
+           hover:bg-brand-600 active:bg-brand-700
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-150 text-sm;
+  }
+
+  /* Secondary button — navy outline */
+  .btn-secondary {
+    @apply bg-white text-navy font-semibold rounded-xl px-5 py-2.5
+           border border-navy-200 hover:bg-navy-50
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-150 text-sm;
+  }
+
+  /* Ghost button — no background */
+  .btn-ghost {
+    @apply bg-transparent text-navy-500 font-medium rounded-xl px-4 py-2
+           hover:bg-navy-50
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-150 text-sm;
+  }
+
+  /* Standard text input */
+  .input {
+    @apply w-full px-3 py-2.5 rounded-xl border border-navy-200
+           bg-white text-navy-900 text-sm placeholder-navy-300
+           focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20
+           transition-colors duration-150;
+  }
+
+  /* Card */
+  .card {
+    @apply bg-white rounded-2xl border border-navy-100 shadow-card;
+  }
+}

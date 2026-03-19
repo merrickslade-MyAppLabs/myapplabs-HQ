@@ -1,9 +1,9 @@
 import { useState } from 'react'
 
 const STATUS_OPTIONS = [
-  { value: 'todo',       label: 'Not started' },
-  { value: 'inprogress', label: 'In Progress' },
-  { value: 'done',       label: 'Done' }
+  { value: 'todo',        label: 'Not started' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'done',        label: 'Done' }
 ]
 
 const PRIORITY_OPTIONS = [
@@ -12,19 +12,45 @@ const PRIORITY_OPTIONS = [
   { value: 'high',   label: 'High' }
 ]
 
-const TYPE_OPTIONS = [
-  'Legal', 'development', 'social', 'Polish', 'design', 'research', 'general'
-]
-
-const EFFORT_OPTIONS = [
-  { value: 'small',  label: 'Small' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'large',  label: 'Large' }
-]
-
 const ASSIGNEE_OPTIONS = ['Merrick Slade', 'Sam Blakesley']
 
-// ── Tag input (same pattern as Notes) ───────────────────────────
+// ── Single-select assignee toggle ────────────────────────────────
+function AssigneeToggle({ assignee, onChange, disabled }) {
+  return (
+    <div style={{ display: 'flex', gap: '8px' }}>
+      {ASSIGNEE_OPTIONS.map(name => {
+        const active = assignee === name
+        return (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onChange(active ? '' : name)}
+            disabled={disabled}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '6px 12px', borderRadius: 'var(--radius-md)',
+              border: `1.5px solid ${active ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+              background: active ? 'var(--accent-primary-muted)' : 'var(--bg-primary)',
+              color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              fontSize: '13px', fontWeight: active ? 600 : 400,
+              transition: 'all 0.15s ease', flex: 1, justifyContent: 'center'
+            }}
+          >
+            {active && (
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M1.5 5.5l2.5 2.5 5.5-5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+            {name.split(' ')[0]}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Tag input ────────────────────────────────────────────────────
 const TAG_PALETTE = [
   { bg: 'rgba(139,92,246,0.15)', text: '#8b5cf6' },
   { bg: 'rgba(59,130,246,0.15)',  text: '#3b82f6' },
@@ -106,16 +132,22 @@ function TagInput({ tags, onChange, disabled }) {
 }
 
 // ── Form ─────────────────────────────────────────────────────────
-export default function TaskForm({ initialData, onSave, onCancel, saving }) {
+/**
+ * @param {object}   props.initialData  — task being edited, or null for new
+ * @param {function} props.onSave       — called with form data on submit
+ * @param {function} props.onCancel
+ * @param {boolean}  props.saving
+ * @param {Array}    props.projects     — [{id, name, clientName}] for the linked-project dropdown
+ */
+export default function TaskForm({ initialData, onSave, onCancel, saving, projects = [] }) {
   const [form, setForm] = useState({
     title:       initialData?.title       || '',
     description: initialData?.description || '',
-    column:      initialData?.column      || 'todo',
+    status:      initialData?.status      || 'todo',
     priority:    initialData?.priority    || 'medium',
-    assignedTo:  initialData?.assignedTo  || '',
+    assignee:    initialData?.assignee    || '',
     dueDate:     initialData?.dueDate     || '',
-    taskType:    initialData?.taskType    || '',
-    effortLevel: initialData?.effortLevel || '',
+    projectId:   initialData?.projectId   || '',
     tags:        Array.isArray(initialData?.tags) ? initialData.tags : []
   })
   const [errors, setErrors] = useState({})
@@ -133,12 +165,11 @@ export default function TaskForm({ initialData, onSave, onCancel, saving }) {
     onSave({
       title:       form.title.trim(),
       description: form.description.trim(),
-      column:      form.column,
+      status:      form.status,
       priority:    form.priority,
-      assignedTo:  form.assignedTo,
+      assignee:    form.assignee || null,
       dueDate:     form.dueDate || null,
-      taskType:    form.taskType,
-      effortLevel: form.effortLevel,
+      projectId:   form.projectId || null,
       tags:        form.tags
     })
   }
@@ -163,7 +194,7 @@ export default function TaskForm({ initialData, onSave, onCancel, saving }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
         <div>
           <label className="label">Status</label>
-          <select className="input select" value={form.column} onChange={e => set('column', e.target.value)} disabled={saving}>
+          <select className="input select" value={form.status} onChange={e => set('status', e.target.value)} disabled={saving}>
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
@@ -179,10 +210,7 @@ export default function TaskForm({ initialData, onSave, onCancel, saving }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
         <div>
           <label className="label">Assigned To</label>
-          <select className="input select" value={form.assignedTo} onChange={e => set('assignedTo', e.target.value)} disabled={saving}>
-            <option value="">Unassigned</option>
-            {ASSIGNEE_OPTIONS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <AssigneeToggle assignee={form.assignee} onChange={v => set('assignee', v)} disabled={saving} />
         </div>
         <div>
           <label className="label">Due Date</label>
@@ -190,22 +218,17 @@ export default function TaskForm({ initialData, onSave, onCancel, saving }) {
         </div>
       </div>
 
-      {/* Task Type + Effort Level */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-        <div>
-          <label className="label">Task Type</label>
-          <select className="input select" value={form.taskType} onChange={e => set('taskType', e.target.value)} disabled={saving}>
-            <option value="">— None —</option>
-            {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Effort Level</label>
-          <select className="input select" value={form.effortLevel} onChange={e => set('effortLevel', e.target.value)} disabled={saving}>
-            <option value="">— None —</option>
-            {EFFORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
+      {/* Linked Project */}
+      <div style={{ marginBottom: '14px' }}>
+        <label className="label">Linked Project <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+        <select className="input select" value={form.projectId} onChange={e => set('projectId', e.target.value)} disabled={saving}>
+          <option value="">— Not linked to a project —</option>
+          {projects.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name}{p.clientName ? ` — ${p.clientName}` : ''}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Description */}

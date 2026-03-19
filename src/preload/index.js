@@ -28,19 +28,40 @@ const shellAPI = {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 }
 
-// Expose APIs to renderer process safely
+// Expose app focus/blur events for the session-lock inactivity timer.
+// Returns a cleanup function that removes the listener.
+const appAPI = {
+  onFocus: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('app:focus', listener)
+    return () => ipcRenderer.removeListener('app:focus', listener)
+  },
+  onBlur: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('app:blur', listener)
+    return () => ipcRenderer.removeListener('app:blur', listener)
+  }
+}
+
+// Expose APIs to renderer via contextBridge — the only permitted bridge.
+// contextIsolation is always true in this app (enforced in main/index.js).
+// The else branch has been intentionally removed: falling back to direct
+// window assignment would bypass the security boundary entirely.
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('electronStore', storeAPI)
     contextBridge.exposeInMainWorld('electronUpdater', updaterAPI)
     contextBridge.exposeInMainWorld('electronShell', shellAPI)
+    contextBridge.exposeInMainWorld('electronApp', appAPI)
   } catch (error) {
-    console.error('Failed to expose APIs via contextBridge:', error)
+    console.error('[preload] contextBridge.exposeInMainWorld failed:', error)
   }
 } else {
-  window.electron = electronAPI
-  window.electronStore = storeAPI
-  window.electronUpdater = updaterAPI
-  window.electronShell = shellAPI
+  // contextIsolation must always be true — if this branch is ever reached,
+  // it means the security configuration has been misconfigured. Fail loudly.
+  console.error(
+    '[preload] SECURITY ERROR: contextIsolation is false. ' +
+    'This should never happen. Check BrowserWindow webPreferences.'
+  )
 }

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 const STORE_KEY = 'rememberedEmail'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, clientRoleError } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
@@ -148,6 +148,28 @@ export default function LoginPage() {
             Sign in to your workspace
           </p>
         </div>
+
+        {/* Client role error */}
+        {clientRoleError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              padding: '12px 16px',
+              background: 'var(--danger-muted)',
+              border: '1px solid var(--danger)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--danger)',
+              fontSize: '13px',
+              marginBottom: '16px',
+              lineHeight: 1.5,
+            }}
+            role="alert"
+          >
+            Client access only. Please visit{' '}
+            <strong>portal.myapplabs.co.uk</strong> to sign in to your client portal.
+          </motion.div>
+        )}
 
         {/* Login Card */}
         <div

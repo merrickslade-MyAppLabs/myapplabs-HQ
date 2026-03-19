@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useToast } from '../../components/ui/Toast'
+import { supabase } from '../../supabase/client'
 import {
   subscribeToTable,
   addRecord,
@@ -11,39 +12,20 @@ import {
 } from '../../supabase/database'
 import TaskForm from './TaskForm'
 
-// ── Status config ────────────────────────────────────────────────
+// ── Status config — matches task_status enum exactly ─────────────
 const STATUS_MAP = {
-  todo:       { label: 'Not started', bg: 'rgba(100,116,139,0.15)', color: '#94a3b8' },
-  inprogress: { label: 'In Progress', bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6' },
-  done:       { label: 'Done',        bg: 'rgba(16,185,129,0.15)',  color: '#10b981' }
+  todo:        { label: 'Not started', bg: 'rgba(100,116,139,0.15)', color: '#94a3b8' },
+  in_progress: { label: 'In Progress', bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6' },
+  done:        { label: 'Done',        bg: 'rgba(16,185,129,0.15)',  color: '#10b981' }
 }
 
-// ── Priority config ──────────────────────────────────────────────
+// ── Priority config — matches task_priority enum exactly ─────────
 const PRIORITY_MAP = {
   high:   { label: 'High',   bg: 'rgba(239,68,68,0.12)',  color: '#ef4444' },
   medium: { label: 'Medium', bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' },
   low:    { label: 'Low',    bg: 'rgba(16,185,129,0.12)', color: '#10b981' }
 }
 
-// ── Effort config ────────────────────────────────────────────────
-const EFFORT_MAP = {
-  small:  { label: 'Small',  bg: 'rgba(20,184,166,0.12)',  color: '#14b8a6' },
-  medium: { label: 'Medium', bg: 'rgba(99,102,241,0.12)',  color: '#6366f1' },
-  large:  { label: 'Large',  bg: 'rgba(168,85,247,0.12)',  color: '#a855f7' }
-}
-
-// ── Task type colours ────────────────────────────────────────────
-const TYPE_COLORS = {
-  legal:       { bg: 'rgba(239,68,68,0.1)',   color: '#ef4444' },
-  development: { bg: 'rgba(59,130,246,0.1)',  color: '#3b82f6' },
-  social:      { bg: 'rgba(168,85,247,0.1)',  color: '#a855f7' },
-  polish:      { bg: 'rgba(236,72,153,0.1)',  color: '#ec4899' },
-  design:      { bg: 'rgba(245,158,11,0.1)',  color: '#f59e0b' },
-  research:    { bg: 'rgba(20,184,166,0.1)',  color: '#14b8a6' },
-  general:     { bg: 'rgba(100,116,139,0.1)', color: '#94a3b8' }
-}
-
-const TYPE_OPTIONS = ['Legal', 'development', 'social', 'Polish', 'design', 'research', 'general']
 const ASSIGNEE_OPTIONS = ['Merrick Slade', 'Sam Blakesley']
 
 // ── Tag palette ──────────────────────────────────────────────────
@@ -134,11 +116,11 @@ function ColHeader({ label, sortKey, sortBy, sortDir, onSort, style }) {
 }
 
 // ── Inline cell dropdown ─────────────────────────────────────────
-function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
+function InlineCellDropdown({ activeCell, tasks, projects, onPatch, onClose }) {
   const panelRef = useRef()
   const inputRef = useRef()
 
-  // Local state for tag editing (must live at component top-level)
+  // Local state for tag editing
   const [localTags, setLocalTags] = useState([])
   const [tagInput, setTagInput]   = useState('')
 
@@ -191,14 +173,12 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
     animation: 'cell-drop-in 0.1s ease'
   }
 
-  // ── Checkmark icon
   const Checkmark = () => (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--accent-primary)' }}>
       <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 
-  // ── Generic option row
   function OptRow({ isActive, onClick, children }) {
     const [hov, setHov] = useState(false)
     return (
@@ -223,11 +203,11 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
   let content = null
 
   // ─ Status ─────────────────────────────────────────────────────
-  if (field === 'column') {
+  if (field === 'status') {
     content = (
       <div style={{ padding: '4px' }}>
         {Object.entries(STATUS_MAP).map(([val, cfg]) => (
-          <OptRow key={val} isActive={task.column === val} onClick={() => onPatch(task.id, { column: val })}>
+          <OptRow key={val} isActive={task.status === val} onClick={() => onPatch(task.id, { status: val })}>
             <Chip label={cfg.label} bg={cfg.bg} color={cfg.color} />
           </OptRow>
         ))}
@@ -246,39 +226,23 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
       </div>
     )
 
-  // ─ Assignee ───────────────────────────────────────────────────
-  } else if (field === 'assignedTo') {
+  // ─ Assignee (single-select) ───────────────────────────────────
+  } else if (field === 'assignee') {
     content = (
-      <div style={{ padding: '4px' }}>
-        <OptRow isActive={!task.assignedTo} onClick={() => onPatch(task.id, { assignedTo: '' })}>
+      <div style={{ padding: '4px', minWidth: '180px' }}>
+        <OptRow isActive={!task.assignee} onClick={() => onPatch(task.id, { assignee: null })}>
           <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>Unassigned</span>
         </OptRow>
         {ASSIGNEE_OPTIONS.map(a => (
-          <OptRow key={a} isActive={task.assignedTo === a} onClick={() => onPatch(task.id, { assignedTo: a })}>
+          <OptRow
+            key={a}
+            isActive={task.assignee === a}
+            onClick={() => onPatch(task.id, { assignee: a })}
+          >
             <Avatar name={a} size={20} />
             <span style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{a}</span>
           </OptRow>
         ))}
-      </div>
-    )
-
-  // ─ Task Type ──────────────────────────────────────────────────
-  } else if (field === 'taskType') {
-    content = (
-      <div style={{ padding: '4px' }}>
-        <OptRow isActive={!task.taskType} onClick={() => onPatch(task.id, { taskType: '' })}>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>— None —</span>
-        </OptRow>
-        {TYPE_OPTIONS.map(t => {
-          const key = t.toLowerCase()
-          const cfg = TYPE_COLORS[key] || TYPE_COLORS.general
-          const label = t.charAt(0).toUpperCase() + t.slice(1)
-          return (
-            <OptRow key={t} isActive={(task.taskType || '').toLowerCase() === key} onClick={() => onPatch(task.id, { taskType: t })}>
-              <Chip label={label} bg={cfg.bg} color={cfg.color} />
-            </OptRow>
-          )
-        })}
       </div>
     )
 
@@ -312,16 +276,19 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
       </div>
     )
 
-  // ─ Effort Level ───────────────────────────────────────────────
-  } else if (field === 'effortLevel') {
+  // ─ Linked Project ─────────────────────────────────────────────
+  } else if (field === 'projectId') {
     content = (
-      <div style={{ padding: '4px' }}>
-        <OptRow isActive={!task.effortLevel} onClick={() => onPatch(task.id, { effortLevel: '' })}>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>— None —</span>
+      <div style={{ padding: '4px', minWidth: '220px' }}>
+        <OptRow isActive={!task.projectId} onClick={() => onPatch(task.id, { projectId: null })}>
+          <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>— Not linked —</span>
         </OptRow>
-        {Object.entries(EFFORT_MAP).map(([val, cfg]) => (
-          <OptRow key={val} isActive={(task.effortLevel || '').toLowerCase() === val} onClick={() => onPatch(task.id, { effortLevel: val })}>
-            <Chip label={cfg.label} bg={cfg.bg} color={cfg.color} />
+        {projects.map(p => (
+          <OptRow key={p.id} isActive={task.projectId === p.id} onClick={() => onPatch(task.id, { projectId: p.id })}>
+            <span style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{p.name}</span>
+            {p.clientName && (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>{p.clientName}</span>
+            )}
           </OptRow>
         ))}
       </div>
@@ -339,7 +306,6 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
         <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
           Tags
         </div>
-        {/* Current tags as removable chips */}
         {localTags.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '8px' }}>
             {localTags.map(tag => {
@@ -365,7 +331,6 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
             })}
           </div>
         )}
-        {/* New tag input */}
         <input
           type="text"
           className="input"
@@ -429,7 +394,6 @@ function InlineCellDropdown({ activeCell, tasks, onPatch, onClose }) {
 }
 
 // ── Editable cell TD ─────────────────────────────────────────────
-// Wraps a TD that supports inline editing — shows a subtle hover cue
 function EditCell({ children, onOpen, style, isRowHovered }) {
   const [hov, setHov] = useState(false)
   return (
@@ -437,15 +401,10 @@ function EditCell({ children, onOpen, style, isRowHovered }) {
       onClick={onOpen}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      style={{
-        padding: '11px 12px',
-        cursor: 'pointer',
-        ...style
-      }}
+      style={{ padding: '11px 12px', cursor: 'pointer', ...style }}
     >
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
         {children}
-        {/* tiny pencil cue — only visible when row AND cell are hovered */}
         {hov && isRowHovered && (
           <svg width="9" height="9" viewBox="0 0 10 10" fill="none" style={{ color: 'var(--text-muted)', opacity: 0.55, flexShrink: 0 }}>
             <path d="M7 1.5l1.5 1.5-5.5 5.5H1.5V7L7 1.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
@@ -459,31 +418,34 @@ function EditCell({ children, onOpen, style, isRowHovered }) {
 // ── Main page ────────────────────────────────────────────────────
 export default function TasksPage() {
   const toast = useToast()
-  const [tasks, setTasks]             = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState(null)
-  const [modalOpen, setModalOpen]     = useState(false)
-  const [editingTask, setEditingTask] = useState(null)
+  const [tasks, setTasks]               = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState(null)
+  const [projects, setProjects]         = useState([])   // for filter + form dropdown
+  const [modalOpen, setModalOpen]       = useState(false)
+  const [editingTask, setEditingTask]   = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [saving, setSaving]           = useState(false)
-  const [hoveredRow, setHoveredRow]   = useState(null)
+  const [saving, setSaving]             = useState(false)
+  const [hoveredRow, setHoveredRow]     = useState(null)
 
   // Multi-select
-  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [selectedIds, setSelectedIds]   = useState(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Inline cell editing
-  const [activeCell, setActiveCell] = useState(null) // { taskId, field, rect }
+  const [activeCell, setActiveCell] = useState(null)
 
   // Filters & sort
-  const [search, setSearch]               = useState('')
-  const [filterStatus, setFilterStatus]   = useState('all')
+  const [search, setSearch]                 = useState('')
+  const [filterStatus, setFilterStatus]     = useState('all')
   const [filterAssignee, setFilterAssignee] = useState('all')
   const [filterPriority, setFilterPriority] = useState('all')
-  const [sortBy, setSortBy]               = useState('createdAt')
-  const [sortDir, setSortDir]             = useState('desc')
+  const [filterProject, setFilterProject]   = useState('all')
+  const [sortBy, setSortBy]                 = useState('createdAt')
+  const [sortDir, setSortDir]               = useState('desc')
 
+  // ── Subscribe to tasks ────────────────────────────────────────
   useEffect(() => {
     const unsub = subscribeToTable(TABLES.TASKS, (docs, err) => {
       if (err) setError('Failed to load tasks.')
@@ -493,14 +455,26 @@ export default function TasksPage() {
     return () => unsub()
   }, [])
 
+  // ── Fetch projects for dropdown/filter ────────────────────────
+  useEffect(() => {
+    supabase
+      .from('projects')
+      .select('id, name, client_name, status')
+      .neq('status', 'complete')
+      .order('name', { ascending: true })
+      .then(({ data }) => {
+        setProjects((data || []).map(p => ({
+          id:         p.id,
+          name:       p.name,
+          clientName: p.client_name || ''
+        })))
+      })
+  }, [])
+
   function handleSort(key) {
     if (sortBy === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortBy(key); setSortDir('asc') }
   }
-
-  const assignees = useMemo(() => {
-    return [...new Set(tasks.map(t => t.assignedTo).filter(Boolean))].sort()
-  }, [tasks])
 
   const visibleTasks = useMemo(() => {
     let list = tasks
@@ -509,13 +483,13 @@ export default function TasksPage() {
       list = list.filter(t =>
         t.title?.toLowerCase().includes(q) ||
         t.description?.toLowerCase().includes(q) ||
-        t.assignedTo?.toLowerCase().includes(q) ||
-        t.taskType?.toLowerCase().includes(q)
+        t.assignee?.toLowerCase().includes(q)
       )
     }
-    if (filterStatus !== 'all')   list = list.filter(t => t.column === filterStatus)
-    if (filterAssignee !== 'all') list = list.filter(t => t.assignedTo === filterAssignee)
+    if (filterStatus !== 'all')   list = list.filter(t => t.status === filterStatus)
+    if (filterAssignee !== 'all') list = list.filter(t => t.assignee === filterAssignee)
     if (filterPriority !== 'all') list = list.filter(t => t.priority === filterPriority)
+    if (filterProject !== 'all')  list = list.filter(t => t.projectId === filterProject)
 
     return [...list].sort((a, b) => {
       let va = a[sortBy] ?? ''
@@ -524,13 +498,12 @@ export default function TasksPage() {
       const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true })
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [tasks, search, filterStatus, filterAssignee, filterPriority, sortBy, sortDir])
+  }, [tasks, search, filterStatus, filterAssignee, filterPriority, filterProject, sortBy, sortDir])
 
   function openAdd()      { setEditingTask(null); setModalOpen(true) }
   function openEdit(task) { setEditingTask(task); setModalOpen(true) }
   function closeModal()   { setModalOpen(false); setEditingTask(null) }
 
-  // Open inline cell editor
   function openCell(e, taskId, field) {
     e.stopPropagation()
     const rect = e.currentTarget.getBoundingClientRect()
@@ -539,7 +512,6 @@ export default function TasksPage() {
 
   const closeCellDropdown = useCallback(() => setActiveCell(null), [])
 
-  // Quick-patch a single field on a task
   async function patchTask(taskId, updates) {
     const { error: err } = await updateRecord(TABLES.TASKS, taskId, updates)
     if (err) toast('Failed to update.', 'error')
@@ -601,8 +573,18 @@ export default function TasksPage() {
     else toast(`${ids.length} task${ids.length !== 1 ? 's' : ''} deleted.`, 'info')
   }
 
-  const hasFilters = search || filterStatus !== 'all' || filterAssignee !== 'all' || filterPriority !== 'all'
-  function clearFilters() { setSearch(''); setFilterStatus('all'); setFilterAssignee('all'); setFilterPriority('all') }
+  const hasFilters = search || filterStatus !== 'all' || filterAssignee !== 'all' || filterPriority !== 'all' || filterProject !== 'all'
+  function clearFilters() {
+    setSearch(''); setFilterStatus('all'); setFilterAssignee('all')
+    setFilterPriority('all'); setFilterProject('all')
+  }
+
+  // Project name lookup for display in table rows
+  const projectMap = useMemo(() => {
+    const m = {}
+    for (const p of projects) m[p.id] = p
+    return m
+  }, [projects])
 
   if (error) {
     return (
@@ -642,7 +624,7 @@ export default function TasksPage() {
 
         {/* Filter bar */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: '160px', maxWidth: '240px' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '160px', maxWidth: '200px' }}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{
               position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)',
               color: 'var(--text-muted)', pointerEvents: 'none'
@@ -661,14 +643,14 @@ export default function TasksPage() {
             style={{ height: '32px', fontSize: '12.5px', minWidth: '130px', width: 'auto' }}>
             <option value="all">All statuses</option>
             <option value="todo">Not started</option>
-            <option value="inprogress">In Progress</option>
+            <option value="in_progress">In Progress</option>
             <option value="done">Done</option>
           </select>
 
           <select className="input select" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
             style={{ height: '32px', fontSize: '12.5px', minWidth: '130px', width: 'auto' }}>
             <option value="all">All assignees</option>
-            {assignees.map(a => <option key={a} value={a}>{a}</option>)}
+            {ASSIGNEE_OPTIONS.map(a => <option key={a} value={a}>{a.split(' ')[0]}</option>)}
           </select>
 
           <select className="input select" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
@@ -677,6 +659,13 @@ export default function TasksPage() {
             <option value="high">High</option>
             <option value="medium">Medium</option>
             <option value="low">Low</option>
+          </select>
+
+          <select className="input select" value={filterProject} onChange={e => setFilterProject(e.target.value)}
+            style={{ height: '32px', fontSize: '12.5px', minWidth: '140px', width: 'auto' }}>
+            <option value="all">All projects</option>
+            <option value="none">No project</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
 
           {hasFilters && (
@@ -699,7 +688,7 @@ export default function TasksPage() {
             <button
               className="btn btn-sm"
               onClick={() => setSelectedIds(new Set())}
-              style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: 0 }}
+              style={{ fontSize: '12px', color: 'var(--text-secondary)' }}
             >
               Deselect all
             </button>
@@ -738,19 +727,15 @@ export default function TasksPage() {
             )}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
             <thead>
               <tr>
-                {/* Select-all checkbox */}
-                <th
-                  style={{
-                    padding: '10px 8px 10px 16px',
-                    borderBottom: '1px solid var(--border-color)',
-                    background: 'var(--bg-secondary)',
-                    position: 'sticky', top: 0, zIndex: 1,
-                    width: 36
-                  }}
-                >
+                <th style={{
+                  padding: '10px 8px 10px 16px',
+                  borderBottom: '1px solid var(--border-color)',
+                  background: 'var(--bg-secondary)',
+                  position: 'sticky', top: 0, zIndex: 1, width: 36
+                }}>
                   <div
                     onClick={toggleSelectAll}
                     style={{
@@ -770,32 +755,29 @@ export default function TasksPage() {
                     )}
                   </div>
                 </th>
-                <ColHeader label="Task name"   sortKey="title"       sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 230, paddingLeft: 8 }} />
-                <ColHeader label="Status"      sortKey="column"      sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 120 }} />
-                <ColHeader label="Assignee"    sortKey="assignedTo"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 150 }} />
-                <ColHeader label="Due date"    sortKey="dueDate"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 105 }} />
-                <ColHeader label="Priority"    sortKey="priority"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 90 }} />
-                <ColHeader label="Type"        sortKey="taskType"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 115 }} />
-                <ColHeader label="Description" sortKey="description" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 190 }} />
-                <ColHeader label="Effort"      sortKey="effortLevel" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 80 }} />
-                <ColHeader label="Tags"        sortKey="tags"        sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 160 }} />
+                <ColHeader label="Task"        sortKey="title"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 230, paddingLeft: 8 }} />
+                <ColHeader label="Status"      sortKey="status"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 120 }} />
+                <ColHeader label="Assignee"    sortKey="assignee"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 130 }} />
+                <ColHeader label="Due date"    sortKey="dueDate"   sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 110 }} />
+                <ColHeader label="Priority"    sortKey="priority"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 90 }} />
+                <ColHeader label="Project"     sortKey="projectId" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 160 }} />
+                <ColHeader label="Tags"        sortKey="tags"      sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ minWidth: 160 }} />
                 <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', position: 'sticky', top: 0, zIndex: 1, minWidth: 64 }} />
               </tr>
             </thead>
             <tbody>
               {visibleTasks.map(task => {
-                const status    = STATUS_MAP[task.column] || STATUS_MAP.todo
-                const priority  = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
-                const effort    = task.effortLevel ? EFFORT_MAP[task.effortLevel.toLowerCase()] : null
-                const typeKey   = (task.taskType || '').toLowerCase()
-                const typeStyle = TYPE_COLORS[typeKey] || TYPE_COLORS.general
+                const statusCfg = STATUS_MAP[task.status] || STATUS_MAP.todo
+                const priorityCfg = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
                 const isHovered = hoveredRow === task.id
 
                 const dueStr = task.dueDate
                   ? new Date(task.dueDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                   : '—'
-                const isOverdue = task.dueDate && task.column !== 'done'
+                const isOverdue = task.dueDate && task.status !== 'done'
                   && new Date(task.dueDate + 'T23:59:59') < new Date()
+
+                const linkedProject = task.projectId ? projectMap[task.projectId] : null
 
                 return (
                   <tr
@@ -803,9 +785,13 @@ export default function TasksPage() {
                     onMouseEnter={() => setHoveredRow(task.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                     style={{
-                      background: selectedIds.has(task.id) ? 'var(--accent-primary-muted)' : isHovered ? 'var(--bg-tertiary)' : 'transparent',
+                      background: selectedIds.has(task.id)
+                        ? 'var(--accent-primary-muted)'
+                        : isOverdue
+                        ? 'rgba(239,68,68,0.04)'
+                        : isHovered ? 'var(--bg-tertiary)' : 'transparent',
                       transition: 'background 0.1s ease',
-                      borderBottom: '1px solid var(--border-color)'
+                      borderBottom: `1px solid ${isOverdue ? 'rgba(239,68,68,0.15)' : 'var(--border-color)'}`
                     }}
                   >
                     {/* Row checkbox */}
@@ -828,35 +814,37 @@ export default function TasksPage() {
                     </td>
 
                     {/* Task name — inline edit */}
-                    <EditCell
-                      isRowHovered={isHovered}
-                      onOpen={e => openCell(e, task.id, 'title')}
-                      style={{ paddingLeft: 8 }}
-                    >
-                      <span style={{
-                        fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)',
-                        display: 'block', overflow: 'hidden', textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap', maxWidth: 220
-                      }}>
-                        {task.title}
-                      </span>
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'title')} style={{ paddingLeft: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {isOverdue && (
+                          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: '#ef4444', flexShrink: 0 }} title="Overdue">
+                            <path d="M7 1L13 12H1L7 1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                            <path d="M7 5.5v3M7 10h.01" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                          </svg>
+                        )}
+                        <span style={{
+                          fontSize: '13px', fontWeight: 600,
+                          color: isOverdue ? '#ef4444' : 'var(--text-primary)',
+                          display: 'block', overflow: 'hidden', textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap', maxWidth: 210
+                        }}>
+                          {task.title}
+                        </span>
+                      </div>
                     </EditCell>
 
                     {/* Status — inline edit */}
-                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'column')}>
-                      <Chip label={status.label} bg={status.bg} color={status.color} />
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'status')}>
+                      <Chip label={statusCfg.label} bg={statusCfg.bg} color={statusCfg.color} />
                     </EditCell>
 
-                    {/* Assignee — inline edit */}
-                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'assignedTo')}>
-                      {task.assignedTo ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                          <Avatar name={task.assignedTo} size={22} />
-                          <span style={{
-                            fontSize: '12.5px', color: 'var(--text-secondary)',
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100
-                          }}>
-                            {task.assignedTo}
+                    {/* Assignee — inline edit (single) */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'assignee')}>
+                      {task.assignee ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Avatar name={task.assignee} size={22} />
+                          <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                            {task.assignee.split(' ')[0]}
                           </span>
                         </div>
                       ) : (
@@ -868,7 +856,7 @@ export default function TasksPage() {
                     <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'dueDate')}>
                       <span style={{
                         fontSize: '12.5px',
-                        color: isOverdue ? 'var(--danger)' : 'var(--text-secondary)',
+                        color: isOverdue ? '#ef4444' : 'var(--text-secondary)',
                         fontWeight: isOverdue ? 600 : 400,
                         whiteSpace: 'nowrap'
                       }}>
@@ -878,41 +866,25 @@ export default function TasksPage() {
 
                     {/* Priority — inline edit */}
                     <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'priority')}>
-                      <Chip label={priority.label} bg={priority.bg} color={priority.color} />
+                      <Chip label={priorityCfg.label} bg={priorityCfg.bg} color={priorityCfg.color} />
                     </EditCell>
 
-                    {/* Task type — inline edit */}
-                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'taskType')}>
-                      {task.taskType ? (
-                        <Chip
-                          label={task.taskType.charAt(0).toUpperCase() + task.taskType.slice(1)}
-                          bg={typeStyle.bg}
-                          color={typeStyle.color}
-                        />
+                    {/* Linked project — inline edit */}
+                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'projectId')}>
+                      {linkedProject ? (
+                        <div>
+                          <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>
+                            {linkedProject.name}
+                          </div>
+                          {linkedProject.clientName && (
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 1 }}>
+                              {linkedProject.clientName}
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
                       )}
-                    </EditCell>
-
-                    {/* Description — click opens full modal */}
-                    <td
-                      style={{ padding: '11px 12px', maxWidth: 190, cursor: 'pointer' }}
-                      onClick={() => openEdit(task)}
-                    >
-                      <span style={{
-                        fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4,
-                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-                      }}>
-                        {task.description || '—'}
-                      </span>
-                    </td>
-
-                    {/* Effort — inline edit */}
-                    <EditCell isRowHovered={isHovered} onOpen={e => openCell(e, task.id, 'effortLevel')}>
-                      {effort
-                        ? <Chip label={effort.label} bg={effort.bg} color={effort.color} />
-                        : <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
-                      }
                     </EditCell>
 
                     {/* Tags — inline edit */}
@@ -976,10 +948,11 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* ── Inline cell dropdown (portal-like, fixed position) ── */}
+      {/* ── Inline cell dropdown ── */}
       <InlineCellDropdown
         activeCell={activeCell}
         tasks={tasks}
+        projects={projects}
         onPatch={patchTask}
         onClose={closeCellDropdown}
       />
@@ -996,6 +969,7 @@ export default function TasksPage() {
           onSave={handleSave}
           onCancel={closeModal}
           saving={saving}
+          projects={projects}
         />
       </Modal>
 
@@ -1016,8 +990,8 @@ export default function TasksPage() {
           50% { opacity: 0.4; }
         }
         @keyframes cell-drop-in {
-          from { opacity: 0; transform: translateY(-4px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
     </div>

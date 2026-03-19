@@ -405,7 +405,7 @@ export default function InternalProjectsPage() {
   const [saving, setSaving]             = useState(false)
 
   useEffect(() => {
-    const { unsubscribe } = subscribeToTable(TABLES.INTERNAL_PROJECTS, (docs, err) => {
+    const unsubscribe = subscribeToTable(TABLES.INTERNAL_PROJECTS, (docs, err) => {
       if (err) console.error('Internal projects error:', err)
       else setProjects(docs)
       setLoading(false)

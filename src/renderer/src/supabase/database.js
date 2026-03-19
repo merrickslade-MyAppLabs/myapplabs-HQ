@@ -8,17 +8,26 @@ import { supabase } from './client'
 
 // ── Table names ──
 export const TABLES = {
-  CLIENTS: 'clients',
-  PROJECTS: 'projects',
-  TASKS: 'tasks',
-  PROMPTS: 'prompts',
-  REVENUE: 'revenue',
-  IDEAS: 'ideas',
-  EXPENSES: 'expenses',
-  NOTES: 'notes',
+  // v2 tables — new schema
+  PROFILES:               'profiles',
+  PROJECTS:               'projects',
+  PROJECT_STAGES:         'project_stages',
+  DOCUMENTS:              'documents',
+  MESSAGES:               'messages',
+  INVOICES:               'invoices',
+  TASKS:                  'tasks',
+  SCRIPTS:                'scripts',
+  WORKFLOW_GUIDANCE:      'workflow_guidance',
+  REFERRALS:              'referrals',
+  AUDIT_LOG:              'audit_log',
+  CLIENT_PORTAL_SETTINGS: 'client_portal_settings',
+  // Preserved v1 tables (RLS tightened to admin only in migration)
+  IDEAS:             'ideas',
+  EXPENSES:          'expenses',
+  NOTES:             'notes',
   INTERNAL_PROJECTS: 'internal_projects',
-  PROVIDERS: 'providers',
-  AUDIT_LOG: 'audit_log'
+  PROVIDERS:         'providers',
+  REVENUE:           'revenue'
 }
 
 // ── Case conversion helpers ──
@@ -290,15 +299,27 @@ export async function fetchProviderPassword(providerId) {
 
 /**
  * Insert an immutable audit log entry.
- * Failures are silent so they never break the UX.
+ * Uses v2 schema column names (entity_type / entity_id).
+ * Accepts legacy resourceType/resourceId for backwards compatibility
+ * during the transition period — both map to the same columns.
+ * Failures are always silent — audit logging must never break normal UX.
  */
-export async function addAuditLog({ userId, action, resourceType, resourceId, metadata = {} }) {
+export async function addAuditLog({
+  userId,
+  action,
+  entityType,
+  entityId,
+  // Legacy aliases — accepted but mapped to entity_type/entity_id
+  resourceType,
+  resourceId,
+  metadata = {}
+}) {
   try {
     await supabase.from(TABLES.AUDIT_LOG).insert({
-      user_id: userId,
+      user_id:     userId,
       action,
-      resource_type: resourceType,
-      resource_id: resourceId || null,
+      entity_type: entityType || resourceType || null,
+      entity_id:   entityId   || resourceId   || null,
       metadata
     })
   } catch {
