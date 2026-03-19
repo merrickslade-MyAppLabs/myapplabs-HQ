@@ -1284,8 +1284,7 @@ ON CONFLICT (id) DO UPDATE SET
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   ];
 
--- Storage RLS must be enabled for the objects table.
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- Note: storage.objects RLS is enabled by Supabase by default — no ALTER needed.
 
 -- Drop any pre-existing policies for this bucket to avoid conflicts.
 DROP POLICY IF EXISTS "storage: clients upload own folder"   ON storage.objects;
