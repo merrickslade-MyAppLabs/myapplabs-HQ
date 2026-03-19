@@ -732,12 +732,13 @@ CREATE POLICY "workflow_guidance: admins only full access"
 -- the team tracks conversion manually via the admin view.
 -- ------------------------------------------------------------
 CREATE TABLE public.referrals (
-  id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  referred_by    uuid        NOT NULL REFERENCES public.profiles(id),
-  referred_email text        NOT NULL,
-  converted      boolean     NOT NULL DEFAULT false,
-  project_id     uuid        REFERENCES public.projects(id),
-  created_at     timestamptz NOT NULL DEFAULT now()
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  referred_by  uuid        NOT NULL REFERENCES public.profiles(id),
+  friend_name  text        NOT NULL,
+  friend_email text        NOT NULL,
+  status       text        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'converted')),
+  project_id   uuid        REFERENCES public.projects(id),
+  created_at   timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX referrals_referred_by_idx ON public.referrals(referred_by);
@@ -770,7 +771,7 @@ CREATE POLICY "referrals: admins can select all"
   );
 
 -- Only admins and super_admin can update referrals — specifically
--- to toggle the converted flag and link a resulting project.
+-- to set status = 'converted' and link a resulting project.
 CREATE POLICY "referrals: admins can update"
   ON public.referrals FOR UPDATE
   USING (
