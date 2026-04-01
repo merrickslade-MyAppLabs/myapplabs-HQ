@@ -21,26 +21,25 @@ export function AuthProvider({ children }) {
   const [roleError,      setRoleError]      = useState(false)  // true if non-client tried to log in
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        // Enforce "remember me" — sessionStorage clears on browser close, localStorage persists.
-        // If the user didn't check remember me and the browser was closed, sign them out.
-        const remembered   = localStorage.getItem('portal-remember-me') === 'true'
-        const sessionAlive = sessionStorage.getItem('portal-session-alive') === 'true'
-        if (!remembered && !sessionAlive) {
-          await supabase.auth.signOut()
-          setLoading(false)
-          return
-        }
-        await hydrateUser(session.user)
-      }
-      setLoading(false)
-    })
-
+    // Use onAuthStateChange only (Supabase v2 best practice).
+    // INITIAL_SESSION fires immediately on mount with the existing session or null —
+    // this replaces the old getSession() call and avoids the race condition that
+    // occurred when both ran simultaneously.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         const u = session?.user ?? null
         if (u) {
+          // On page load (INITIAL_SESSION), enforce remember-me.
+          // sessionStorage is cleared when the browser closes; localStorage persists.
+          // If the user didn't tick remember me and the browser was closed, sign out.
+          if (event === 'INITIAL_SESSION') {
+            const remembered   = localStorage.getItem('portal-remember-me') === 'true'
+            const sessionAlive = sessionStorage.getItem('portal-session-alive') === 'true'
+            if (!remembered && !sessionAlive) {
+              await supabase.auth.signOut()
+              return // SIGNED_OUT event will fire next → clears state + setLoading(false)
+            }
+          }
           await hydrateUser(u)
         } else {
           setUser(null)
