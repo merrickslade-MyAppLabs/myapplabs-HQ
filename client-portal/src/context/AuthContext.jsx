@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
     try {
       const { data: prof, error: profError } = await supabase
         .from('profiles')
-        .select('id, full_name, email, role, first_login')
+        .select('id, full_name, role, first_login')
         .eq('id', u.id)
         .single()
 
@@ -96,7 +96,7 @@ export function AuthProvider({ children }) {
         .eq('id', u.id)
         .then(() => {}) // fire-and-forget — non-critical
     } catch (err) {
-      console.error('[AuthContext] hydrateUser error:', err)
+      console.error('[AuthContext] hydrateUser error:', err?.message ?? err?.code ?? JSON.stringify(err))
       // Sign out on unexpected DB error — prevents partial authenticated state
       await supabase.auth.signOut()
       setUser(null)
