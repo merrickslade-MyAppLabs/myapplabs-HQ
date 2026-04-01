@@ -54,6 +54,7 @@ export default function LoginPage() {
   const [error,     setError]   = useState('')
   const [resending, setResending] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)  // seconds remaining
+  const [rememberMe, setRememberMe] = useState(true)
 
   const emailRef   = useRef(null)
   const otpRef     = useRef(null)
@@ -112,7 +113,7 @@ export default function LoginPage() {
     }
     setLoading(true)
     setError('')
-    const { error: err } = await verifyOtp(email.trim().toLowerCase(), code)
+    const { error: err } = await verifyOtp(email.trim().toLowerCase(), code, rememberMe)
     setLoading(false)
     if (err) {
       setError(err)
@@ -197,6 +198,29 @@ export default function LoginPage() {
                       {error}
                     </div>
                   )}
+
+                  <label className="flex items-center gap-2.5 mb-4 cursor-pointer select-none">
+                    <div className="relative flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={rememberMe}
+                        onChange={e => setRememberMe(e.target.checked)}
+                      />
+                      <div className={`w-4.5 h-4.5 w-[18px] h-[18px] rounded-[4px] border-2 transition-colors duration-150 flex items-center justify-center ${
+                        rememberMe
+                          ? 'bg-brand border-brand'
+                          : 'bg-white border-gray-300'
+                      }`}>
+                        {rememberMe && (
+                          <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden="true">
+                            <path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-sm text-gray-600">Remember me on this device</span>
+                  </label>
 
                   <button
                     type="submit"

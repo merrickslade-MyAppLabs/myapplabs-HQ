@@ -23,6 +23,15 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
+        // Enforce "remember me" — sessionStorage clears on browser close, localStorage persists.
+        // If the user didn't check remember me and the browser was closed, sign them out.
+        const remembered   = localStorage.getItem('portal-remember-me') === 'true'
+        const sessionAlive = sessionStorage.getItem('portal-session-alive') === 'true'
+        if (!remembered && !sessionAlive) {
+          await supabase.auth.signOut()
+          setLoading(false)
+          return
+        }
         await hydrateUser(session.user)
       }
       setLoading(false)
@@ -127,7 +136,7 @@ export function AuthProvider({ children }) {
    * Step 2: verify the 6-digit OTP.
    * Returns { error } where error is a string or null.
    */
-  async function verifyOtp(email, token) {
+  async function verifyOtp(email, token, rememberMe = true) {
     const { error } = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
       token: token.trim(),
@@ -141,6 +150,13 @@ export function AuthProvider({ children }) {
         return { error: 'Incorrect code. Please try again.' }
       }
       return { error: 'Verification failed. Please try again.' }
+    }
+    // Store remember-me preference before onAuthStateChange fires
+    sessionStorage.setItem('portal-session-alive', 'true')
+    if (rememberMe) {
+      localStorage.setItem('portal-remember-me', 'true')
+    } else {
+      localStorage.removeItem('portal-remember-me')
     }
     return { error: null }
   }
@@ -159,6 +175,8 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    sessionStorage.removeItem('portal-session-alive')
+    localStorage.removeItem('portal-remember-me')
     await supabase.auth.signOut()
   }
 
