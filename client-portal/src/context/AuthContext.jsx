@@ -29,15 +29,19 @@ export function AuthProvider({ children }) {
       async (event, session) => {
         const u = session?.user ?? null
         if (u) {
-          // On page load (INITIAL_SESSION), enforce remember-me.
-          // sessionStorage is cleared when the browser closes; localStorage persists.
-          // If the user didn't tick remember me and the browser was closed, sign out.
+          // On page load, enforce remember-me before doing anything else.
+          // sessionStorage clears when browser closes; localStorage persists.
+          // If the user didn't tick remember me and it's a new browser session, sign out.
           if (event === 'INITIAL_SESSION') {
             const remembered   = localStorage.getItem('portal-remember-me') === 'true'
             const sessionAlive = sessionStorage.getItem('portal-session-alive') === 'true'
             if (!remembered && !sessionAlive) {
-              await supabase.auth.signOut()
-              return // SIGNED_OUT event will fire next → clears state + setLoading(false)
+              // Show login page immediately, then clean up the stale session.
+              // Deferred with setTimeout to avoid calling signOut() inside the
+              // onAuthStateChange handler (causes a deadlock in Supabase JS).
+              setLoading(false)
+              setTimeout(() => supabase.auth.signOut(), 0)
+              return
             }
           }
           await hydrateUser(u)
