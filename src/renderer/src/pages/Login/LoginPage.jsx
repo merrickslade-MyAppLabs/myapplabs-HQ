@@ -9,6 +9,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
+
+  // Surface clientRoleError as a standard error so there's no portal-specific UI
+  const displayError = error || (clientRoleError ? 'This account does not have access to MyAppLabs HQ.' : null)
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
@@ -149,27 +152,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Client role error */}
-        {clientRoleError && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{
-              padding: '12px 16px',
-              background: 'var(--danger-muted)',
-              border: '1px solid var(--danger)',
-              borderRadius: 'var(--radius-md)',
-              color: 'var(--danger)',
-              fontSize: '13px',
-              marginBottom: '16px',
-              lineHeight: 1.5,
-            }}
-            role="alert"
-          >
-            Client access only. Please visit{' '}
-            <strong>portal.myapplabs.co.uk</strong> to sign in to your client portal.
-          </motion.div>
-        )}
 
         {/* Login Card */}
         <div
@@ -188,7 +170,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
-                  if (error) setError(null)
+                  setError(null)
                 }}
                 autoComplete="email"
                 autoFocus
@@ -210,7 +192,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value)
-                    if (error) setError(null)
+                    setError(null)
                   }}
                   autoComplete="current-password"
                   disabled={loading}
@@ -293,7 +275,7 @@ export default function LoginPage() {
             </div>
 
             {/* Error message */}
-            {error && (
+            {displayError && (
               <motion.div
                 initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -315,7 +297,7 @@ export default function LoginPage() {
                   <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.4"/>
                   <path d="M7 4v4M7 9.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                 </svg>
-                {error}
+                {displayError}
               </motion.div>
             )}
 
