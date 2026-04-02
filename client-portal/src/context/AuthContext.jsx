@@ -12,6 +12,20 @@ const AuthContext = createContext(null)
  *
  * The portal reads client_portal_settings on login to gate which sections
  * are visible. Those settings are exposed via `portalSettings`.
+ *
+ * ── Why the handler is NOT async ─────────────────────────────────────────────
+ * Supabase JS v2 awaits every onAuthStateChange callback before resolving
+ * supabase.auth.verifyOtp(). If our handler is async and awaits DB queries,
+ * verifyOtp() hangs until those queries finish — leaving "Verifying…" on-screen
+ * forever if the DB is slow or errors. Making the handler synchronous lets
+ * verifyOtp() return immediately. hydrateUser() then runs in the background and
+ * sets loading=true so App.jsx shows a spinner while the dashboard loads.
+ *
+ * ── Why signOut is always deferred with setTimeout ───────────────────────────
+ * Calling supabase.auth.signOut() synchronously inside onAuthStateChange causes
+ * a deadlock in Supabase JS v2 — the client waits for signOut to finish while
+ * signOut waits for the same handler to return. setTimeout(..., 0) defers the
+ * call to the next event-loop tick, breaking the cycle.
  */
 export function AuthProvider({ children }) {
   const [user,           setUser]           = useState(null)
@@ -33,12 +47,10 @@ export function AuthProvider({ children }) {
       })
     }, 8000)
 
-    // Use onAuthStateChange only (Supabase v2 best practice).
-    // INITIAL_SESSION fires immediately on mount with the existing session or null —
-    // this replaces the old getSession() call and avoids the race condition that
-    // occurred when both ran simultaneously.
+    // IMPORTANT: This handler is intentionally NOT async.
+    // See file-level comment for the full explanation.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         const u = session?.user ?? null
         if (u) {
           // On page load, enforce remember-me before doing anything else.
@@ -48,17 +60,16 @@ export function AuthProvider({ children }) {
             const remembered   = localStorage.getItem('portal-remember-me') === 'true'
             const sessionAlive = sessionStorage.getItem('portal-session-alive') === 'true'
             if (!remembered && !sessionAlive) {
-              // Show login page immediately, then clean up the stale session.
-              // Deferred with setTimeout to avoid calling signOut() inside the
-              // onAuthStateChange handler (causes a deadlock in Supabase JS).
               setLoading(false)
               setTimeout(() => supabase.auth.signOut(), 0)
               return
             }
           }
-          // hydrateUser calls setLoading(false) itself in every code path,
-          // so we do NOT call it here after awaiting.
-          await hydrateUser(u)
+
+          // Call hydrateUser without awaiting — the handler must stay synchronous.
+          // hydrateUser sets loading=true immediately (before its first await) so
+          // App.jsx shows a spinner while the DB queries are in flight.
+          hydrateUser(u, event)
         } else {
           setUser(null)
           setProfile(null)
@@ -79,11 +90,22 @@ export function AuthProvider({ children }) {
    * Fetch the user's profile row. If the role is not 'client', sign them out
    * and set roleError — the login page shows an appropriate message.
    *
-   * IMPORTANT: this always calls setLoading(false) before returning, and always
-   * defers any signOut() with setTimeout to avoid calling it inside the
-   * onAuthStateChange handler (which causes a deadlock in Supabase JS v2).
+   * Rules:
+   * - Always calls setLoading(false) before returning (every code path).
+   * - All signOut() calls are deferred with setTimeout to avoid the deadlock
+   *   described in the file-level comment.
+   * - Sets loading=true synchronously at the start for SIGNED_IN / INITIAL_SESSION
+   *   events so App.jsx shows a spinner (not a flash of the login page) while the
+   *   DB queries are in flight. TOKEN_REFRESHED and other mid-session events skip
+   *   this to avoid flashing the spinner on the already-visible dashboard.
    */
-  async function hydrateUser(u) {
+  async function hydrateUser(u, event) {
+    // Show loading spinner for fresh logins and page-load sessions.
+    // Skip for mid-session events (TOKEN_REFRESHED etc.) to avoid a flash.
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      setLoading(true)
+    }
+
     try {
       const { data: prof, error: profError } = await supabase
         .from('profiles')
@@ -99,7 +121,6 @@ export function AuthProvider({ children }) {
         setProfile(null)
         setPortalSettings(null)
         setLoading(false)
-        // Defer signOut — calling it directly inside onAuthStateChange deadlocks Supabase JS
         setTimeout(() => supabase.auth.signOut(), 0)
         return
       }
@@ -135,7 +156,6 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error('[AuthContext] hydrateUser error:', err?.message ?? err?.code ?? JSON.stringify(err))
       // Sign out on unexpected DB error — prevents partial authenticated state.
-      // Defer signOut — calling it directly inside onAuthStateChange deadlocks Supabase JS
       setUser(null)
       setProfile(null)
       setPortalSettings(null)
