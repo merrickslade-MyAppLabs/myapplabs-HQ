@@ -21,6 +21,18 @@ export function AuthProvider({ children }) {
   const [roleError,      setRoleError]      = useState(false)  // true if non-client tried to log in
 
   useEffect(() => {
+    // Safety net: if something hangs (network issue, unexpected error, etc.)
+    // force the loading screen away after 8 seconds so no client gets stuck forever.
+    const loadingTimeout = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          console.warn('[AuthContext] Loading timeout — forcing login page')
+          return false
+        }
+        return prev
+      })
+    }, 8000)
+
     // Use onAuthStateChange only (Supabase v2 best practice).
     // INITIAL_SESSION fires immediately on mount with the existing session or null —
     // this replaces the old getSession() call and avoids the race condition that
@@ -44,23 +56,32 @@ export function AuthProvider({ children }) {
               return
             }
           }
+          // hydrateUser calls setLoading(false) itself in every code path,
+          // so we do NOT call it here after awaiting.
           await hydrateUser(u)
         } else {
           setUser(null)
           setProfile(null)
           setPortalSettings(null)
           setRoleError(false)
+          setLoading(false)
         }
-        setLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(loadingTimeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   /**
    * Fetch the user's profile row. If the role is not 'client', sign them out
    * and set roleError — the login page shows an appropriate message.
+   *
+   * IMPORTANT: this always calls setLoading(false) before returning, and always
+   * defers any signOut() with setTimeout to avoid calling it inside the
+   * onAuthStateChange handler (which causes a deadlock in Supabase JS v2).
    */
   async function hydrateUser(u) {
     try {
@@ -73,11 +94,13 @@ export function AuthProvider({ children }) {
       if (profError) throw profError
 
       if (!prof || prof.role !== 'client') {
-        await supabase.auth.signOut()
         setRoleError(true)
         setUser(null)
         setProfile(null)
         setPortalSettings(null)
+        setLoading(false)
+        // Defer signOut — calling it directly inside onAuthStateChange deadlocks Supabase JS
+        setTimeout(() => supabase.auth.signOut(), 0)
         return
       }
 
@@ -107,13 +130,17 @@ export function AuthProvider({ children }) {
         .update({ last_seen: new Date().toISOString() })
         .eq('id', u.id)
         .then(() => {}) // fire-and-forget — non-critical
+
+      setLoading(false)
     } catch (err) {
       console.error('[AuthContext] hydrateUser error:', err?.message ?? err?.code ?? JSON.stringify(err))
-      // Sign out on unexpected DB error — prevents partial authenticated state
-      await supabase.auth.signOut()
+      // Sign out on unexpected DB error — prevents partial authenticated state.
+      // Defer signOut — calling it directly inside onAuthStateChange deadlocks Supabase JS
       setUser(null)
       setProfile(null)
       setPortalSettings(null)
+      setLoading(false)
+      setTimeout(() => supabase.auth.signOut(), 0)
     }
   }
 
