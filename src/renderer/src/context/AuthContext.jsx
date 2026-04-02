@@ -102,7 +102,7 @@ export function AuthProvider({ children }) {
     try {
       const { data: prof } = await supabase
         .from('profiles')
-        .select('id, role, full_name, email')
+        .select('id, role, full_name')
         .eq('id', u.id)
         .single()
 
