@@ -13,58 +13,93 @@ const MFA_REQUIRED_ROLES = new Set(['admin', 'super_admin'])
  *   'checking'      — fetching MFA state after login
  *   'needs_enroll'  — admin/super_admin with no TOTP factor enrolled
  *   'needs_verify'  — TOTP enrolled but not yet verified this session (AAL1)
- *   'verified'      — MFA complete or not required (client role)
+ *   'verified'      — MFA complete or not required
+ *
+ * ── Why the handler is NOT async ─────────────────────────────────────────────
+ * Supabase JS v2 awaits every onAuthStateChange callback before resolving
+ * auth operations (signInWithPassword, token refresh, etc.). An async handler
+ * that awaits DB / MFA API calls can therefore block indefinitely if those calls
+ * are slow, causing the infinite loading spinner on startup.
+ * Making the handler synchronous lets auth operations resolve immediately.
+ * checkMfaStatus() runs in the background and calls setLoading(false) itself.
+ *
+ * ── Why getSession() is removed ──────────────────────────────────────────────
+ * Using both getSession() and onAuthStateChange together creates a race condition
+ * where both try to hydrate the user simultaneously. In Supabase v2, the
+ * INITIAL_SESSION event from onAuthStateChange is the correct single source of
+ * truth — it fires immediately on mount with the existing session or null,
+ * replacing the need for a separate getSession() call.
+ *
+ * ── Why signOut is always deferred with setTimeout ───────────────────────────
+ * Calling supabase.auth.signOut() synchronously inside onAuthStateChange causes
+ * a deadlock in Supabase JS v2. setTimeout(..., 0) defers it to the next
+ * event-loop tick, breaking the cycle.
  */
 export function AuthProvider({ children }) {
   const [user,            setUser]            = useState(null)
-  const [profile,         setProfile]         = useState(null)  // { id, role, full_name, email }
+  const [profile,         setProfile]         = useState(null)
   const [loading,         setLoading]         = useState(true)
   const [authError,       setAuthError]       = useState(null)
   const [mfaStatus,       setMfaStatus]       = useState('idle')
-  const [clientRoleError, setClientRoleError] = useState(false) // client tried to log in to HQ
+  const [clientRoleError, setClientRoleError] = useState(false)
 
   useEffect(() => {
-    // Restore any existing session from localStorage on mount
-    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      if (error) console.error('Session restore error:', error)
-      const u = session?.user ?? null
-      if (u) {
-        await checkMfaStatus(u)
-      }
-      setLoading(false)
-    })
+    // Safety net: if anything hangs (slow network, unexpected error, etc.)
+    // force loading away after 10 seconds so the app never gets permanently stuck.
+    const loadingTimeout = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          console.warn('[AuthContext] Loading timeout — forcing login page')
+          return false
+        }
+        return prev
+      })
+    }, 10000)
 
-    // Subscribe to auth state changes (login, logout, token refresh)
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const u = session?.user ?? null
-      if (!u) {
-        setUser(null)
-        setProfile(null)
-        setMfaStatus('idle')
-        setLoading(false)
-        return
-      }
-      // Re-validate role and MFA on every session refresh — catches role changes
-      // that occur while the app is open
-      if (event === 'TOKEN_REFRESHED') {
-        await checkMfaStatus(u)
-      }
-      setLoading(false)
-    })
+    // IMPORTANT: handler is intentionally NOT async — see file-level comment.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        const u = session?.user ?? null
 
-    return () => subscription.unsubscribe()
+        if (!u) {
+          setUser(null)
+          setProfile(null)
+          setMfaStatus('idle')
+          setLoading(false)
+          return
+        }
+
+        // Fire checkMfaStatus without awaiting — keeps the handler synchronous.
+        // checkMfaStatus sets loading=false in every code path.
+        if (
+          event === 'INITIAL_SESSION' ||
+          event === 'SIGNED_IN'       ||
+          event === 'TOKEN_REFRESHED'
+        ) {
+          checkMfaStatus(u)
+        }
+        // USER_UPDATED and other events: loading already false, no action needed.
+      }
+    )
+
+    return () => {
+      clearTimeout(loadingTimeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   /**
    * Check whether this user needs MFA enrollment or verification.
    * Only admin and super_admin are required to use TOTP.
+   *
+   * Rules:
+   * - Always calls setLoading(false) before returning (every code path).
+   * - All signOut() calls are deferred with setTimeout to avoid the deadlock
+   *   described in the file-level comment.
    */
   async function checkMfaStatus(u) {
     setMfaStatus('checking')
     try {
-      // Fetch the user's role and profile
       const { data: prof } = await supabase
         .from('profiles')
         .select('id, role, full_name, email')
@@ -73,13 +108,15 @@ export function AuthProvider({ children }) {
 
       const role = prof?.role ?? 'client'
 
-      // Client accounts must not access HQ — sign out immediately
+      // Client accounts must not access HQ — sign out immediately.
+      // Defer signOut to avoid calling it inside onAuthStateChange (deadlock).
       if (role === 'client') {
-        await supabase.auth.signOut()
         setUser(null)
         setProfile(null)
         setClientRoleError(true)
         setMfaStatus('idle')
+        setLoading(false)
+        setTimeout(() => supabase.auth.signOut(), 0)
         return
       }
 
@@ -88,34 +125,31 @@ export function AuthProvider({ children }) {
       setClientRoleError(false)
 
       if (!MFA_REQUIRED_ROLES.has(role)) {
-        // Any other non-admin role — MFA not required
+        // Any non-admin role — MFA not required
         setMfaStatus('verified')
+        setLoading(false)
         return
       }
 
-      // Check enrolled factors
+      // Check enrolled TOTP factors
       const { data: factorsData } = await supabase.auth.mfa.listFactors()
       const totpFactors = (factorsData?.totp ?? []).filter(f => f.status === 'verified')
 
       if (totpFactors.length === 0) {
-        // No verified TOTP factor — force enrollment
         setMfaStatus('needs_enroll')
+        setLoading(false)
         return
       }
 
       // TOTP enrolled — check current Assurance Level
       const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-      if (aalData?.currentLevel === 'aal2') {
-        // Already verified this session
-        setMfaStatus('verified')
-      } else {
-        // Need to verify TOTP for this session
-        setMfaStatus('needs_verify')
-      }
+      setMfaStatus(aalData?.currentLevel === 'aal2' ? 'verified' : 'needs_verify')
+      setLoading(false)
     } catch (err) {
-      console.error('[MFA] checkMfaStatus error:', err)
+      console.error('[AuthContext] checkMfaStatus error:', err)
       // Fail open — allow access rather than permanently blocking on a network error
       setMfaStatus('verified')
+      setLoading(false)
     }
   }
 
@@ -158,7 +192,7 @@ export function AuthProvider({ children }) {
       if (!factor) return { error: 'No TOTP factor found. Please enrol a new authenticator.' }
 
       const { data: challengeData, error: challengeErr } = await supabase.auth.mfa.challenge({
-        factorId: factor.id
+        factorId: factor.id,
       })
       if (challengeErr) return { error: 'Failed to start challenge. Please try again.' }
 
@@ -168,9 +202,7 @@ export function AuthProvider({ children }) {
         code:        code.trim().replace(/\s/g, ''),
       })
 
-      if (verifyErr) {
-        return { error: 'Incorrect code. Please check your authenticator and try again.' }
-      }
+      if (verifyErr) return { error: 'Incorrect code. Please check your authenticator and try again.' }
 
       setMfaStatus('verified')
       return { error: null }
@@ -182,7 +214,6 @@ export function AuthProvider({ children }) {
   /**
    * Enroll a new TOTP factor.
    * Returns { factorId, qrCode, uri, error }.
-   * After user scans the QR code and enters the first code, call confirmMfaEnroll().
    */
   async function enrollMfa() {
     try {
@@ -227,7 +258,7 @@ export function AuthProvider({ children }) {
    * Sign out the current user.
    */
   async function logout() {
-    clearDerivedKey() // Wipe in-memory AES key before sign-out
+    clearDerivedKey()
     try {
       await supabase.auth.signOut()
       setUser(null)
@@ -237,28 +268,19 @@ export function AuthProvider({ children }) {
     }
   }
 
-  /**
-   * Map Supabase plain-English error messages to user-friendly strings.
-   */
   function getFriendlyAuthError(message) {
     if (!message) return 'An unexpected error occurred. Please try again.'
     const lower = message.toLowerCase()
-
-    if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+    if (lower.includes('invalid login credentials') || lower.includes('invalid credentials'))
       return 'Invalid email or password. Please try again.'
-    }
-    if (lower.includes('email not confirmed')) {
+    if (lower.includes('email not confirmed'))
       return 'Your account email is not confirmed. Please check your inbox.'
-    }
-    if (lower.includes('too many requests') || lower.includes('rate limit')) {
+    if (lower.includes('too many requests') || lower.includes('rate limit'))
       return 'Too many failed attempts. Please wait a moment before trying again.'
-    }
-    if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch')) {
+    if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch'))
       return 'Network error. Please check your internet connection.'
-    }
-    if (lower.includes('user not found')) {
+    if (lower.includes('user not found'))
       return 'No account found with this email address.'
-    }
     return 'An unexpected error occurred. Please try again.'
   }
 
